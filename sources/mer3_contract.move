@@ -98,7 +98,7 @@ module merg3::creature_nft {
     }
 
     /// Separated NFT metadata for better organization
-    public struct NFTMetadata has store {
+    public struct NFTMetadata has store, drop {
         name: String,
         style: String,
         elements: VecMap<String, String>,
