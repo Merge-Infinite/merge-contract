@@ -10,7 +10,6 @@ module merg3::creature_nft {
     use sui::balance::{Self, Balance};
     use sui::table::{Self, Table};
     use sui::clock::{Self, Clock};
-    use sui::vec_map::{Self, VecMap};
 
     // ========== Constants ==========
     
@@ -22,6 +21,8 @@ module merg3::creature_nft {
     const EEventAlreadyActive: u64 = 8;
     const EInvalidEnvironment: u64 = 9;
     const EInvalidFeeRate: u64 = 10;
+    const ENameAlreadyExists: u64 = 11;
+    const EInvalidName: u64 = 12;
 
     /// Environment types
     const ENVIRONMENT_UNIVERSE: u8 = 0;
@@ -39,7 +40,6 @@ module merg3::creature_nft {
     const DEFAULT_SEABED_RATE: u64 = 100_000_000; // 0.1 SUI per day
     const MAX_FEE_BPS: u16 = 10000; // 100%
     
-    const ADMIN_ADDRESS: address = @admin;
 
     // ========== Core Structs ==========
 
@@ -56,7 +56,21 @@ module merg3::creature_nft {
         treasury: Balance<SUI>,
         config: CollectionConfig,
         events: EnvironmentEvents,
-        pending_rewards: Table<object::ID, u64>
+        pending_rewards: Table<object::ID, u64>,
+        public_recipes: Table<vector<u8>, PublicRecipe>,
+        recipe_list: vector<vector<u8>>,
+        used_names: Table<String, address>,
+        names_list: vector<String>,
+        recipes_by_item: Table<u64, vector<vector<u8>>>,
+    }
+
+    public struct PublicRecipe has store, copy, drop {
+        recipe_hash: vector<u8>,
+        creator: address,
+        name: String,
+        metadata: NFTMetadata,
+        creation_time: u64,
+        usage_count: u64,
     }
 
     /// Consolidated configuration struct
@@ -97,12 +111,22 @@ module merg3::creature_nft {
         created_at: u64,
     }
 
+    public struct ItemInfo has store, copy, drop {
+        item_id: u64,
+        quantity: u64,
+    }
     /// Separated NFT metadata for better organization
-    public struct NFTMetadata has store, drop {
+    public struct NFTMetadata has store, drop, copy {
         name: String,
-        style: String,
-        elements: VecMap<String, String>,
+        leg_items: vector<ItemInfo>,
+        body_items: vector<ItemInfo>,
+        hand_items: vector<ItemInfo>,
+        head_items: vector<ItemInfo>,
+        style_items: vector<ItemInfo>,
+        material_items: vector<ItemInfo>,
+        environment_items: vector<ItemInfo>,
         image_uri: String,
+        created_at: u64,
     }
 
     /// Staking information
@@ -121,6 +145,7 @@ module merg3::creature_nft {
         nft_id: object::ID,
         name: String,
         creator: address,
+        is_duplicate_recipe: bool,
     }
 
     public struct NFTStaked has copy, drop {
@@ -170,7 +195,12 @@ module merg3::creature_nft {
             treasury: balance::zero(),
             config: create_default_config(ctx),
             events: create_default_events(),
-            pending_rewards: table::new(ctx)
+            pending_rewards: table::new(ctx),
+            used_names: table::new(ctx),
+            names_list: vector::empty(),
+            public_recipes: table::new(ctx),
+            recipe_list: vector::empty(),
+            recipes_by_item: table::new(ctx),
         };
         transfer::share_object(collection);
     }
@@ -208,45 +238,79 @@ module merg3::creature_nft {
         }
     }
 
+    public fun is_name_available(collection: &BrainrotCollection, name: &String): bool {
+        !table::contains(&collection.used_names, *name)
+    }
+
+    fun reserve_name(collection: &mut BrainrotCollection, name: String, creator: address) {
+        assert!(!table::contains(&collection.used_names, name), ENameAlreadyExists);
+        
+        table::add(&mut collection.used_names, name, creator);
+        vector::push_back(&mut collection.names_list, name);
+    }
+
     // ========== Recipe Management ==========
 
     public fun calculate_recipe_hash(metadata: &NFTMetadata): vector<u8> {
-        let serialized = serialize_recipe_data(&metadata.name, &metadata.style, &metadata.elements);
+        let serialized = serialize_recipe_data(metadata);
         hash::sha2_256(serialized)
     }
 
     fun serialize_recipe_data(
-        name: &String, 
-        style: &String,
-        elements: &VecMap<String, String>
+        metadata: &NFTMetadata
     ): vector<u8> {
-        let mut serialized = vector::empty<u8>();
+    let mut serialized = vector::empty<u8>();
         
-        append_with_separator(&mut serialized, string::as_bytes(name));
-        append_with_separator(&mut serialized, string::as_bytes(style));
-        
-        // Serialize elements in consistent order
-        let keys = vec_map::keys(elements);
-        let mut i = 0;
-        let keys_len = vector::length(&keys);
-        
-        while (i < keys_len) {
-            let key = vector::borrow(&keys, i);
-            let value = vec_map::get(elements, key);
-            
-            append_with_separator(&mut serialized, string::as_bytes(key));
-            append_with_separator(&mut serialized, string::as_bytes(value));
-            
-            i = i + 1;
-        };
+        // Only serialize items, not name (since names are unique)
+        serialize_items(&mut serialized, &metadata.leg_items);
+        serialize_items(&mut serialized, &metadata.body_items);
+        serialize_items(&mut serialized, &metadata.hand_items);
+        serialize_items(&mut serialized, &metadata.head_items);
+        serialize_items(&mut serialized, &metadata.style_items);
+        serialize_items(&mut serialized, &metadata.material_items);
+        serialize_items(&mut serialized, &metadata.environment_items);
         
         serialized
     }
 
-    fun append_with_separator(serialized: &mut vector<u8>, data: &vector<u8>) {
-        vector::append(serialized, *data);
-        vector::push_back(serialized, 0u8); // null byte separator
+    fun u64_to_bytes(value: u64): vector<u8> {
+        let mut bytes = vector::empty<u8>();
+        let mut temp = value;
+        
+        if (temp == 0) {
+            vector::push_back(&mut bytes, 0u8);
+            return bytes
+        };
+        
+        while (temp > 0) {
+            vector::push_back(&mut bytes, ((temp % 256) as u8));
+            temp = temp / 256;
+        };
+        
+        // Reverse for big-endian
+        vector::reverse(&mut bytes);
+        bytes
     }
+
+    fun serialize_items(serialized: &mut vector<u8>, items: &vector<ItemInfo>) {
+        let len = vector::length(items);
+        let mut i = 0;
+        
+        while (i < len) {
+            let item = vector::borrow(items, i);
+            // Convert numbers to bytes and append
+            let item_id_bytes = u64_to_bytes(item.item_id);
+            let quantity_bytes = u64_to_bytes(item.quantity);
+            
+            vector::append(serialized, item_id_bytes);
+            vector::push_back(serialized, 0u8); // separator
+            vector::append(serialized, quantity_bytes);
+            vector::push_back(serialized, 0u8); // separator
+            
+            i = i + 1;
+        };
+    }
+
 
     public fun check_recipe(
         collection: &BrainrotCollection,
@@ -259,9 +323,7 @@ module merg3::creature_nft {
         }
     }
 
-    fun store_recipe(collection: &mut BrainrotCollection, recipe_hash: vector<u8>, creator: address) {
-        table::add(&mut collection.config.recipes, recipe_hash, creator);
-    }
+
 
     // ========== Environment Management ==========
 
@@ -399,20 +461,32 @@ module merg3::creature_nft {
         clock: &Clock,
         ctx: &mut TxContext
     ): CreatureNFT {
+        let sender = tx_context::sender(ctx);
+    
+        // CRITICAL: Check name availability first
+        assert!(is_name_available(collection, &metadata.name), ENameAlreadyExists);
+        
+        // Reserve the name
+        reserve_name(collection, metadata.name, sender);
+        
+        // Calculate recipe hash (based on items only)
         let recipe_hash = calculate_recipe_hash(&metadata);
-        let (exists, original_creator) = check_recipe(collection, &recipe_hash);
+        let recipe_exists = table::contains(&collection.public_recipes, recipe_hash);
         
-        handle_minting_payment(collection, payment, exists, original_creator, ctx);
-        
-        if (!exists) {
-            store_recipe(collection, recipe_hash, tx_context::sender(ctx));
+        if (recipe_exists) {
+            // Same item combination exists with different name - charge fee
+            handle_duplicate_payment(collection, payment, &recipe_hash, ctx);
+            increment_recipe_usage(collection, &recipe_hash);
+        } else {
+            // New item combination - store recipe
+            store_recipe(collection, recipe_hash, sender, &metadata, clock);
         };
 
         let nft = CreatureNFT {
             id: object::new(ctx),
             metadata,
             recipe_hash,
-            creator: tx_context::sender(ctx),
+            creator: sender,
             created_at: clock::timestamp_ms(clock),
         };
 
@@ -422,29 +496,96 @@ module merg3::creature_nft {
             nft_id: object::id(&nft),
             name: nft.metadata.name,
             creator: nft.creator,
+            is_duplicate_recipe: recipe_exists,
         });
         
         nft
     }
 
-    fun handle_minting_payment(
+    fun store_recipe(
+        collection: &mut BrainrotCollection,
+        recipe_hash: vector<u8>,
+        creator: address,
+        metadata: &NFTMetadata,
+        clock: &Clock
+    ) {
+        let public_recipe = PublicRecipe {
+            recipe_hash,
+            creator,
+            name: metadata.name,
+            metadata: *metadata,
+            creation_time: clock::timestamp_ms(clock),
+            usage_count: 1,
+        };
+        
+        table::add(&mut collection.public_recipes, recipe_hash, public_recipe);
+        vector::push_back(&mut collection.recipe_list, recipe_hash);
+        
+        // Index by items for search
+        index_recipe_by_items(collection, &recipe_hash, metadata);
+    }
+
+    /// Index recipe by item IDs
+    fun index_recipe_by_items(
+        collection: &mut BrainrotCollection,
+        recipe_hash: &vector<u8>,
+        metadata: &NFTMetadata
+    ) {
+        // Index all items from all categories
+        index_items_list(collection, recipe_hash, &metadata.leg_items);
+        index_items_list(collection, recipe_hash, &metadata.body_items);
+        index_items_list(collection, recipe_hash, &metadata.hand_items);
+        index_items_list(collection, recipe_hash, &metadata.head_items);
+        index_items_list(collection, recipe_hash, &metadata.style_items);
+        index_items_list(collection, recipe_hash, &metadata.material_items);
+        index_items_list(collection, recipe_hash, &metadata.environment_items);
+    }
+
+    fun index_items_list(
+        collection: &mut BrainrotCollection,
+        recipe_hash: &vector<u8>,
+        items: &vector<ItemInfo>
+    ) {
+        let len = vector::length(items);
+        let mut i = 0;
+        
+        while (i < len) {
+            let item = vector::borrow(items, i);
+            
+            if (table::contains(&collection.recipes_by_item, item.item_id)) {
+                let recipe_list = table::borrow_mut(&mut collection.recipes_by_item, item.item_id);
+                vector::push_back(recipe_list, *recipe_hash);
+            } else {
+                let mut new_list = vector::empty<vector<u8>>();
+                vector::push_back(&mut new_list, *recipe_hash);
+                table::add(&mut collection.recipes_by_item, item.item_id, new_list);
+            };
+            
+            i = i + 1;
+        };
+    }
+
+    fun handle_duplicate_payment(
         collection: &BrainrotCollection,
         payment: &mut Coin<SUI>,
-        recipe_exists: bool,
-        original_creator: address,
+        recipe_hash: &vector<u8>,
         ctx: &mut TxContext
     ) {
-        let payment_amount = if (recipe_exists) {
-            collection.config.duplicate_recipe_fee
-        } else {
-            0 // Free for new recipes
-        };
+        let fee_amount = collection.config.duplicate_recipe_fee;
+        assert!(coin::value(payment) >= fee_amount, EInsufficientFee);
+        
+        let public_recipe = table::borrow(&collection.public_recipes, *recipe_hash);
+        let payment_coin = coin::split(payment, fee_amount, ctx);
+        transfer::public_transfer(payment_coin, public_recipe.creator);
+    }
 
-        if (payment_amount > 0) {
-            assert!(coin::value(payment) >= payment_amount, EInsufficientFee);
-            let total_payment = coin::split(payment, payment_amount, ctx);
-            let recipient = if (recipe_exists) { original_creator } else { ADMIN_ADDRESS };
-            transfer::public_transfer(total_payment, recipient);
+    fun increment_recipe_usage(
+        collection: &mut BrainrotCollection,
+        recipe_hash: &vector<u8>
+    ) {
+        if (table::contains(&collection.public_recipes, *recipe_hash)) {
+            let public_recipe = table::borrow_mut(&mut collection.public_recipes, *recipe_hash);
+            public_recipe.usage_count = public_recipe.usage_count + 1;
         }
     }
 
@@ -689,74 +830,131 @@ module merg3::creature_nft {
         if (a < b) { a } else { b }
     }
 
-    public fun create_nft_metadata(
-        name: String,
-        style: String,
-        elements: VecMap<String, String>,
-        image_uri: String
-    ): NFTMetadata {
-        NFTMetadata {
-            name,
-            style,
-            elements,
-            image_uri,
-        }
-    }
-
     // ========== Public Entry Functions ==========
 
     public entry fun mint_creature_entry(
         _: &AdminCap,
         collection: &mut BrainrotCollection,
         name: String,
-        style: String,
-        head: String,
-        head_accessory: String,
-        body: String,
-        hand: String,
-        leg: String,
-        environment: String,
+        leg_item_ids: vector<u64>,
+        leg_quantities: vector<u64>,
+        
+        body_item_ids: vector<u64>,
+        body_quantities: vector<u64>,
+        
+        hand_item_ids: vector<u64>,
+        hand_quantities: vector<u64>,
+        
+        head_item_ids: vector<u64>,
+        head_quantities: vector<u64>,
+        
+        style_item_ids: vector<u64>,
+        style_quantities: vector<u64>,
+        
+        material_item_ids: vector<u64>,
+        material_quantities: vector<u64>,
+        
+        environment_item_ids: vector<u64>,
+        environment_quantities: vector<u64>,
         image_uri: String,
         payment: &mut Coin<SUI>,
         recipient: address,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        let elements = build_elements_map(head, head_accessory, body, hand, leg, environment);
-        let metadata = create_nft_metadata(name, style, elements, image_uri);
+        let leg_items = build_simple_items(leg_item_ids, leg_quantities);
+        let body_items = build_simple_items(body_item_ids, body_quantities);
+        let hand_items = build_simple_items(hand_item_ids, hand_quantities);
+        let head_items = build_simple_items(head_item_ids, head_quantities);
+        let style_items = build_simple_items(style_item_ids, style_quantities);
+        let material_items = build_simple_items(material_item_ids, material_quantities);
+        let environment_items = build_simple_items(environment_item_ids, environment_quantities);
+        
+        // Create metadata (with name validation)
+        let metadata = create_nft_metadata(
+            name,
+            leg_items,
+            body_items,
+            hand_items,
+            head_items,
+            style_items,
+            material_items,
+            environment_items,
+            image_uri,
+            clock
+        );
         
         let nft = mint_creature_nft(collection, metadata, payment, clock, ctx);
         transfer::public_transfer(nft, recipient);
     }
 
-    fun build_elements_map(
-        head: String,
-        head_accessory: String,
-        body: String,
-        hand: String,
-        leg: String,
-        environment: String
-    ): VecMap<String, String> {
-        let mut elements = vec_map::empty<String, String>();
+    fun build_simple_items(item_ids: vector<u64>, quantities: vector<u64>): vector<ItemInfo> {
+        assert!(vector::length(&item_ids) == vector::length(&quantities), 1001);
         
-        add_element_if_non_empty(&mut elements, string::utf8(b"head"), head);
-        add_element_if_non_empty(&mut elements, string::utf8(b"head_accessory"), head_accessory);
-        add_element_if_non_empty(&mut elements, string::utf8(b"body"), body);
-        add_element_if_non_empty(&mut elements, string::utf8(b"hand"), hand);
-        add_element_if_non_empty(&mut elements, string::utf8(b"leg"), leg);
-        add_element_if_non_empty(&mut elements, string::utf8(b"environment"), environment);
+        let mut items = vector::empty<ItemInfo>();
+        let len = vector::length(&item_ids);
         
-        elements
+        let mut i = 0;
+        while (i < len) {
+            let item = ItemInfo {
+                item_id: *vector::borrow(&item_ids, i),
+                quantity: *vector::borrow(&quantities, i)
+            };
+            vector::push_back(&mut items, item);
+            i = i + 1;
+        };
+        
+        items
     }
 
-    fun add_element_if_non_empty(
-        elements: &mut VecMap<String, String>,
-        key: String,
-        value: String
-    ) {
-        if (string::length(&value) > 0) {
-            vec_map::insert(elements, key, value);
+    public fun create_nft_metadata(
+        name: String,
+        leg_items: vector<ItemInfo>,
+        body_items: vector<ItemInfo>,
+        hand_items: vector<ItemInfo>,
+        head_items: vector<ItemInfo>,
+        style_items: vector<ItemInfo>,
+        material_items: vector<ItemInfo>,
+        environment_items: vector<ItemInfo>,
+        image_uri: String,
+        clock: &Clock
+    ): NFTMetadata {
+        validate_name(&name);
+        
+        NFTMetadata {
+            name,
+            leg_items,
+            body_items,
+            hand_items,
+            head_items,
+            style_items,
+            material_items,
+            environment_items,
+            image_uri,
+            created_at: clock::timestamp_ms(clock),
         }
+    }
+
+    fun validate_name(name: &String) {
+        let name_bytes = string::as_bytes(name);
+        let len = vector::length(name_bytes);
+        
+        // Name must be between 1 and 50 characters
+        assert!(len > 0 && len <= 50, EInvalidName);
+        
+        // Name cannot be just whitespace
+        let mut has_non_whitespace = false;
+        let mut i = 0;
+        while (i < len) {
+            let byte = *vector::borrow(name_bytes, i);
+            if (byte != 32u8 && byte != 9u8 && byte != 10u8 && byte != 13u8) { // not space, tab, newline, carriage return
+                has_non_whitespace = true;
+                break
+            };
+            i = i + 1;
+        };
+        
+        assert!(has_non_whitespace, EInvalidName);
     }
 
     public entry fun stake_creature_entry(
@@ -802,8 +1000,8 @@ module merg3::creature_nft {
         )
     }
 
-    public fun get_nft_info(nft: &CreatureNFT): (&String, &String, address, u64) {
-        (&nft.metadata.name, &nft.metadata.style, nft.creator, nft.created_at)
+    public fun get_nft_info(nft: &CreatureNFT): (&String, address, u64) {
+        (&nft.metadata.name, nft.creator, nft.created_at)
     }
 
     public fun get_stake_info(stake: &StakeInfo): (object::ID, address, u8, u64, u64) {

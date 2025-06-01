@@ -1,7 +1,6 @@
 [package]
 name = "mer3_contract"
-edition = "2024.beta"                                                               # edition = "legacy" to use legacy (pre-2024) Move
-published-at = "0x43e49b70b1789b80250e3074f14a882e0e4b7e61c9aca3099f20397dcffa6562"
+edition = "2024.beta"  # edition = "legacy" to use legacy (pre-2024) Move
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet", override = true }
