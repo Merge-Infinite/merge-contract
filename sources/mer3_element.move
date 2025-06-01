@@ -65,7 +65,7 @@ module merg3::creative_element_nft {
     }
 
     // ========== Initialization ==========
-
+    #[allow(lint(share_owned))]
     fun init(witness: CREATIVE_ELEMENT_NFT, ctx: &mut TxContext) {
         let publisher = package::claim(witness, ctx);
         let (policy, cap) = transfer_policy::new<CreativeElementNFT>(&publisher, ctx);

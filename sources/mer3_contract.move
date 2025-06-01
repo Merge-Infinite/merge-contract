@@ -10,6 +10,9 @@ module merg3::creature_nft {
     use sui::balance::{Self, Balance};
     use sui::table::{Self, Table};
     use sui::clock::{Self, Clock};
+    use sui::transfer_policy;
+    use sui::package;
+    
 
     // ========== Constants ==========
     
@@ -180,13 +183,16 @@ module merg3::creature_nft {
         total_duration: u64,
     }
 
-    // ========== Initialization ==========
+    public struct CREATURE_NFT has drop {}
 
-    fun init(ctx: &mut TxContext) {
-        transfer::transfer(
-            AdminCap { id: object::new(ctx) }, 
-            tx_context::sender(ctx)
-        );
+
+    // ========== Initialization ==========
+    #[allow(lint(share_owned))]
+    fun init(witness: CREATURE_NFT, ctx: &mut TxContext) {
+
+        let publisher = package::claim(witness, ctx);
+        let (policy, cap) = transfer_policy::new<CreatureNFT>(&publisher, ctx);
+
 
         let collection = BrainrotCollection {
             id: object::new(ctx),
@@ -202,6 +208,13 @@ module merg3::creature_nft {
             recipe_list: vector::empty(),
             recipes_by_item: table::new(ctx),
         };
+        transfer::public_share_object(policy);
+        transfer::transfer(
+            AdminCap { id: object::new(ctx) }, 
+            tx_context::sender(ctx)
+        );
+        transfer::public_transfer(cap, tx_context::sender(ctx));
+        transfer::public_transfer(publisher, tx_context::sender(ctx));
         transfer::share_object(collection);
     }
 
