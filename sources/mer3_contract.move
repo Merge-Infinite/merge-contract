@@ -204,7 +204,7 @@ module merg3::creature_nft {
             pending_rewards: table::new(ctx),
             used_names: table::new(ctx),
             names_list: vector::empty(),
-            public_recipes: table::new(ctx),
+            public_recipes: mint_creature_entrytable::new(ctx),
             recipe_list: vector::empty(),
             recipes_by_item: table::new(ctx),
         };
