@@ -6,18 +6,14 @@ module merg3::creative_element_nft {
     use sui::event;
     use sui::sui::SUI;
     use sui::balance::{Self, Balance};
-    use sui::table::{Self, Table};
+    use sui::coin::{Self, Coin};
     use sui::clock::{Self, Clock};
     use sui::display;
     use sui::package;
     use sui::transfer_policy;
 
-    
-
-    
     /// Default values
     const DEFAULT_CREATOR_FEE_BPS: u16 = 250; // 2.5%
-
     
     // ========== Core Structs ==========
 
@@ -29,19 +25,17 @@ module merg3::creative_element_nft {
         id: UID,
     }
 
-    /// Main collection state
+    /// Main collection state - simplified without staking/rewards
     public struct ElementCollection has key {
         id: UID,
         minted_count: u64,
         treasury: Balance<SUI>,
         config: CollectionConfig,
-        pending_rewards: Table<object::ID, u64>
     }
 
     public struct CollectionConfig has store {
         creator_fee_bps: u16,
     }
-
 
     /// Creative Element NFT with enhanced metadata and image support
     public struct CreativeElementNFT has key, store {
@@ -75,7 +69,7 @@ module merg3::creative_element_nft {
         let mut display = display::new<CreativeElementNFT>(&publisher, ctx);
         
         // Set display fields
-        display::add(&mut display, string::utf8(b"name"), string::utf8(b"{metadata.name}"));
+        display::add(&mut display, string::utf8(b"name"), string::utf8(b"{element_name}"));
         display::add(&mut display, string::utf8(b"element_name"), string::utf8(b"{element_name}"));
         display::add(&mut display, string::utf8(b"emoji"), string::utf8(b"{emoji}"));
         display::add(&mut display, string::utf8(b"amount"), string::utf8(b"{amount}"));
@@ -98,7 +92,6 @@ module merg3::creative_element_nft {
             config: CollectionConfig {
                 creator_fee_bps: DEFAULT_CREATOR_FEE_BPS,
             },
-            pending_rewards: table::new(ctx)
         };
 
         // Transfer objects
@@ -109,8 +102,7 @@ module merg3::creative_element_nft {
         transfer::share_object(collection);
     }
 
-
-    // ========== Admin Mint Function ==========
+    // ========== Minting Functions ==========
 
     public entry fun mint_with_admin(
         _admin: &AdminCap,
@@ -148,7 +140,6 @@ module merg3::creative_element_nft {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-
         let nft = mint_creative_element_nft(
             collection,
             element_name,
@@ -173,8 +164,6 @@ module merg3::creative_element_nft {
         clock: &Clock,
         ctx: &mut TxContext
     ): CreativeElementNFT {
-        
-    
         let nft = CreativeElementNFT {
             id: object::new(ctx),
             element_name,
@@ -213,6 +202,28 @@ module merg3::creative_element_nft {
         object::delete(id);
     }
 
+    // ========== Admin Functions ==========
+
+    public entry fun add_treasury_funds(
+        _: &AdminCap,
+        collection: &mut ElementCollection,
+        payment: &mut Coin<SUI>,
+        amount: u64,
+        ctx: &mut TxContext
+    ) {
+        let coin_balance = coin::split(payment, amount, ctx);
+        balance::join(&mut collection.treasury, coin::into_balance(coin_balance));
+    }
+
+    public entry fun update_creator_fee(
+        _: &AdminCap,
+        collection: &mut ElementCollection,
+        fee_bps: u16,
+    ) {
+        assert!(fee_bps <= 10000, 1); // Max 100%
+        collection.config.creator_fee_bps = fee_bps;
+    }
+
     // ========== View Functions ==========
 
     public fun get_element_name(nft: &CreativeElementNFT): String {
@@ -243,6 +254,12 @@ module merg3::creative_element_nft {
         nft.image_url
     }
 
+    public fun get_collection_stats(collection: &ElementCollection): (u64, u64) {
+        (
+            collection.minted_count,
+            balance::value(&collection.treasury)
+        )
+    }
 
     // ========== Test Functions ==========
 
