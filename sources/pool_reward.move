@@ -163,6 +163,11 @@ module merg3::pool_rewards {
         updated_by: address,
     }    
 
+    public struct PoolTimeExtended has copy, drop {
+        pool_id: ID,
+        new_end_time: u64,
+    }
+
     public struct POOL_REWARDS has drop {}
 
     // ========== Initialization ==========
@@ -202,7 +207,6 @@ module merg3::pool_rewards {
     ) {
         // Validate time range
         let current_time = clock::timestamp_ms(clock);
-        assert!(start_time > current_time, EInvalidTimeRange);
         assert!(end_time > start_time, EInvalidTimeRange);
 
         pool_system.pool_counter = pool_system.pool_counter + 1;
@@ -255,7 +259,6 @@ module merg3::pool_rewards {
         assert!(!pool.is_active, EPoolAlreadyActive);
         
         let current_time = clock::timestamp_ms(clock);
-        assert!(current_time >= pool.start_time, EInvalidTimeRange);
         
         pool.is_active = true;
         
@@ -284,6 +287,24 @@ module merg3::pool_rewards {
             end_time: current_time,
             total_participants: pool.participant_count,
             total_nfts: pool.total_staked_count,
+        });
+    }
+
+    public entry fun extend_pool_time(
+        _: &PoolAdminCap,
+        pool_system: &mut PoolSystem,
+        pool_id: ID,
+        new_end_time: u64,
+        _ctx: &mut TxContext
+    ) {
+        let pool = object_table::borrow_mut(&mut pool_system.pools, pool_id);
+        assert!(pool.is_active, EPoolNotActive);
+        
+        pool.end_time = new_end_time;
+        
+        event::emit(PoolTimeExtended {
+            pool_id,
+            new_end_time,
         });
     }
 
