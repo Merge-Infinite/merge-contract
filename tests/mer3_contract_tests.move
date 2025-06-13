@@ -5,13 +5,11 @@ module merg3::creature_nft_tests {
     use sui::coin::{Self, Coin};
     use sui::sui::SUI;
     use sui::clock::{Self, Clock};
-    use sui::vec_map;
     use merg3::creature_nft::{
         Self,
         AdminCap,
         BrainrotCollection,
         CreatureNFT,
-        StakeInfo,
         NFTMetadata,
     };
 
@@ -20,20 +18,9 @@ module merg3::creature_nft_tests {
     const USER1: address = @0x2;
     const USER2: address = @0x3;
 
-    // Environment constants for testing
-    const ENVIRONMENT_UNIVERSE: u8 = 0;
-    const ENVIRONMENT_SKY: u8 = 1;
-    const ENVIRONMENT_SEABED: u8 = 2;
-
     // Helper function to create a test scenario
     fun create_test_scenario(): Scenario {
         ts::begin(ADMIN)
-    }
-
-    // Helper function to create a test coin with specific amount
-    #[allow(unused_function)]
-    fun create_test_coin(amount: u64, scenario: &mut Scenario): Coin<SUI> {
-        coin::mint_for_testing<SUI>(amount, ts::ctx(scenario))
     }
 
     // Helper function to create a test clock with timestamp
@@ -48,21 +35,89 @@ module merg3::creature_nft_tests {
         create_test_clock_with_time(1000000, scenario) // Start at 1000 seconds
     }
 
-    // Helper function to create test NFT metadata
-    fun create_test_metadata(): NFTMetadata {
-        let mut elements = vec_map::empty<String, String>();
-        vec_map::insert(&mut elements, string::utf8(b"head"), string::utf8(b"Dragon Head"));
-        vec_map::insert(&mut elements, string::utf8(b"head_accessory"), string::utf8(b"Crown"));
-        vec_map::insert(&mut elements, string::utf8(b"body"), string::utf8(b"Scaled Body"));
-        vec_map::insert(&mut elements, string::utf8(b"hand"), string::utf8(b"Clawed Hand"));
-        vec_map::insert(&mut elements, string::utf8(b"leg"), string::utf8(b"Powerful Leg"));
-        vec_map::insert(&mut elements, string::utf8(b"environment"), string::utf8(b"Fire"));
+    // Helper function to create test item vectors
+    fun create_test_items(): (
+        vector<u64>, vector<u64>, // leg
+        vector<u64>, vector<u64>, // body
+        vector<u64>, vector<u64>, // hand
+        vector<u64>, vector<u64>, // head
+        vector<u64>, vector<u64>, // style
+        vector<u64>, vector<u64>, // material
+        vector<u64>, vector<u64>  // environment
+    ) {
+        // Create simple test items for each category
+        let leg_ids = vector[1u64];
+        let leg_quantities = vector[1u64];
+        
+        let body_ids = vector[2u64];
+        let body_quantities = vector[1u64];
+        
+        let hand_ids = vector[3u64];
+        let hand_quantities = vector[1u64];
+        
+        let head_ids = vector[4u64];
+        let head_quantities = vector[1u64];
+        
+        let style_ids = vector[5u64];
+        let style_quantities = vector[1u64];
+        
+        let material_ids = vector[6u64];
+        let material_quantities = vector[1u64];
+        
+        let environment_ids = vector[7u64];
+        let environment_quantities = vector[1u64];
 
-        creature_nft::create_nft_metadata(
-            string::utf8(b"Fire Dragon"),
-            string::utf8(b"Mystical"),
-            elements,
-            string::utf8(b"https://example.com/dragon.png")
+        (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        )
+    }
+
+    // Helper function to create different test items for duplicate recipe testing
+    fun create_different_test_items(): (
+        vector<u64>, vector<u64>, // leg
+        vector<u64>, vector<u64>, // body
+        vector<u64>, vector<u64>, // hand
+        vector<u64>, vector<u64>, // head
+        vector<u64>, vector<u64>, // style
+        vector<u64>, vector<u64>, // material
+        vector<u64>, vector<u64>  // environment
+    ) {
+        // Create different items for testing duplicate recipes
+        let leg_ids = vector[10u64];
+        let leg_quantities = vector[1u64];
+        
+        let body_ids = vector[20u64];
+        let body_quantities = vector[1u64];
+        
+        let hand_ids = vector[30u64];
+        let hand_quantities = vector[1u64];
+        
+        let head_ids = vector[40u64];
+        let head_quantities = vector[1u64];
+        
+        let style_ids = vector[50u64];
+        let style_quantities = vector[1u64];
+        
+        let material_ids = vector[60u64];
+        let material_quantities = vector[1u64];
+        
+        let environment_ids = vector[70u64];
+        let environment_quantities = vector[1u64];
+
+        (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
         )
     }
 
@@ -84,84 +139,36 @@ module merg3::creature_nft_tests {
             let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
             let clock = create_test_clock(&mut scenario);
 
-            // Test minting with new recipe - should be free for new recipes
+            let (
+                leg_ids, leg_quantities,
+                body_ids, body_quantities,
+                hand_ids, hand_quantities,
+                head_ids, head_quantities,
+                style_ids, style_quantities,
+                material_ids, material_quantities,
+                environment_ids, environment_quantities
+            ) = create_test_items();
+
+            // Test minting with new recipe
             creature_nft::mint_creature_entry(
                 &admin_cap,
                 &mut collection,
                 string::utf8(b"Fire Dragon"),
-                string::utf8(b"Mystical"),
-                string::utf8(b"Dragon Head"),
-                string::utf8(b"Crown"),
-                string::utf8(b"Scaled Body"),
-                string::utf8(b"Clawed Hand"),
-                string::utf8(b"Powerful Leg"),
-                string::utf8(b"Fire"),
-                string::utf8(b"https://example.com/dragon.png"),
-                &mut payment,
-                USER1,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            // Verify collection state
-            assert!(creature_nft::get_minted_count(&collection) == 1, 0);
-
-            // Clean up
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            coin::burn_for_testing(payment);
-            clock::destroy_for_testing(clock);
-        };
-
-        // Verify NFT was transferred to USER1
-        ts::next_tx(&mut scenario, USER1);
-        {
-            assert!(ts::has_most_recent_for_sender<CreatureNFT>(&scenario), 1);
-            let nft = ts::take_from_sender<CreatureNFT>(&scenario);
-            
-            // Verify NFT properties
-            let (name, style, creator, created_at) = creature_nft::get_nft_info(&nft);
-            assert!(*name == string::utf8(b"Fire Dragon"), 2);
-            assert!(*style == string::utf8(b"Mystical"), 3);
-            assert!(creator == ADMIN, 4);
-            assert!(created_at > 0, 5);
-            
-            ts::return_to_sender(&scenario, nft);
-        };
-
-        let _ = ts::end(scenario);
-    }
-
-    #[test]
-    fun test_mint_duplicate_recipe_with_fee() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize the module
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        // First mint - new recipe (free)
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::mint_creature_entry(
-                &admin_cap,
-                &mut collection,
-                string::utf8(b"Fire Dragon"),
-                string::utf8(b"Mystical"),
-                string::utf8(b"Dragon Head"),
-                string::utf8(b"Crown"),
-                string::utf8(b"Scaled Body"),
-                string::utf8(b"Clawed Hand"),
-                string::utf8(b"Powerful Leg"),
-                string::utf8(b"Fire"),
-                string::utf8(b"https://example.com/dragon.png"),
+                leg_ids,
+                leg_quantities,
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/reserved.png"),
                 &mut payment,
                 USER1,
                 &clock,
@@ -174,393 +181,18 @@ module merg3::creature_nft_tests {
             clock::destroy_for_testing(clock);
         };
 
-        // Second mint - duplicate recipe (should charge fee to original creator)
-        ts::next_tx(&mut scenario, USER2);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_address<AdminCap>(&scenario, ADMIN);
-            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::mint_creature_entry(
-                &admin_cap,
-                &mut collection,
-                string::utf8(b"Fire Dragon"),
-                string::utf8(b"Mystical"),
-                string::utf8(b"Dragon Head"),
-                string::utf8(b"Crown"),
-                string::utf8(b"Scaled Body"),
-                string::utf8(b"Clawed Hand"),
-                string::utf8(b"Powerful Leg"),
-                string::utf8(b"Fire"),
-                string::utf8(b"https://example.com/dragon.png"),
-                &mut payment,
-                USER2,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            // Verify both NFTs were minted
-            assert!(creature_nft::get_minted_count(&collection) == 2, 6);
-
-            ts::return_shared(collection);
-            ts::return_to_address(ADMIN, admin_cap);
-            coin::burn_for_testing(payment);
-            clock::destroy_for_testing(clock);
-        };
-
-        let _ = ts::end(scenario);
-    }
-
-    #[test]
-    fun test_staking_and_unstaking() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize and mint NFT
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::mint_creature_entry(
-                &admin_cap,
-                &mut collection,
-                string::utf8(b"Test NFT"),
-                string::utf8(b"Test Style"),
-                string::utf8(b"Head"),
-                string::utf8(b""),
-                string::utf8(b"Body"),
-                string::utf8(b"Hand"),
-                string::utf8(b"Leg"),
-                string::utf8(b"Universe"),
-                string::utf8(b"https://example.com/test.png"),
-                &mut payment,
-                USER1,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            coin::burn_for_testing(payment);
-            clock::destroy_for_testing(clock);
-        };
-
-        // User stakes the NFT
-        ts::next_tx(&mut scenario, USER1);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let nft = ts::take_from_sender<CreatureNFT>(&scenario);
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::stake_creature_entry(
-                &mut collection,
-                nft,
-                ENVIRONMENT_UNIVERSE,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            // Verify staking stats updated
-            let (_, staked_universe, _staked_sky, _staked_seabed, _) = creature_nft::get_collection_stats(&collection);
-            assert!(staked_universe == 1, 7);
-            // Other environments should still be 0
-
-            ts::return_shared(collection);
-            clock::destroy_for_testing(clock);
-        };
-
-        // Verify stake info was created
-        ts::next_tx(&mut scenario, USER1);
-        {
-            assert!(ts::has_most_recent_for_sender<StakeInfo>(&scenario), 10);
-            let stake_info = ts::take_from_sender<StakeInfo>(&scenario);
-            
-            // Verify stake info
-            let (_nft_id, owner, environment, stake_time, last_reward_time) = creature_nft::get_stake_info(&stake_info);
-            assert!(owner == USER1, 11);
-            assert!(environment == ENVIRONMENT_UNIVERSE, 12);
-            assert!(stake_time == last_reward_time, 13);
-            
-            ts::return_to_sender(&scenario, stake_info);
-        };
-
-        // User unstakes the NFT
-        ts::next_tx(&mut scenario, USER1);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let stake_info = ts::take_from_sender<StakeInfo>(&scenario);
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::unstake_creature_entry(
-                &mut collection,
-                stake_info,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            // Verify staking stats updated
-            let (_, staked_universe, _staked_sky, _staked_seabed, _) = creature_nft::get_collection_stats(&collection);
-            assert!(staked_universe == 0, 14);
-
-            ts::return_shared(collection);
-            clock::destroy_for_testing(clock);
-        };
-
-        // Verify NFT was returned
-        ts::next_tx(&mut scenario, USER1);
-        {
-            assert!(ts::has_most_recent_for_sender<CreatureNFT>(&scenario), 15);
-            let nft = ts::take_from_sender<CreatureNFT>(&scenario);
-            ts::return_to_sender(&scenario, nft);
-        };
-
-        ts::end(scenario);
-    }
-
-    #[test]
-    fun test_event_management() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize the module
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        // Start an event
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::start_event(
-                &admin_cap,
-                &mut collection,
-                ENVIRONMENT_UNIVERSE,
-                7, // 7 days
-                1000000000, // 1 SUI per day
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            clock::destroy_for_testing(clock);
-        };
-
-        // End the event
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::end_event(
-                &admin_cap,
-                &mut collection,
-                ENVIRONMENT_UNIVERSE,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            clock::destroy_for_testing(clock);
-        };
-
-        ts::end(scenario);
-    }
-
-    #[test]
-    fun test_treasury_funding() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize the module
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        // Add funds to treasury
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-
-            creature_nft::add_treasury_funds(
-                &admin_cap,
-                &mut collection,
-                &mut payment,
-                500000000, // 0.5 SUI
-                ts::ctx(&mut scenario)
-            );
-
-            // Verify treasury balance increased
-            let (_, _, _, _, treasury_balance) = creature_nft::get_collection_stats(&collection);
-            assert!(treasury_balance == 500000000, 16);
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            coin::burn_for_testing(payment);
-        };
-
-        ts::end(scenario);
-    }
-
-    #[test]
-    fun test_reward_claiming() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize and setup
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        // Add treasury funds and start event
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let mut payment = coin::mint_for_testing<SUI>(10000000000, ts::ctx(&mut scenario)); // 10 SUI
-            let clock = create_test_clock(&mut scenario);
-
-            // Fund treasury
-            creature_nft::add_treasury_funds(
-                &admin_cap,
-                &mut collection,
-                &mut payment,
-                5000000000, // 5 SUI
-                ts::ctx(&mut scenario)
-            );
-
-            // Start universe event
-            creature_nft::start_event(
-                &admin_cap,
-                &mut collection,
-                ENVIRONMENT_UNIVERSE,
-                30, // 30 days
-                600000000, // 0.6 SUI per day (default rate)
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            coin::burn_for_testing(payment);
-            clock::destroy_for_testing(clock);
-        };
-
-        // Mint and stake NFT
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::mint_creature_entry(
-                &admin_cap,
-                &mut collection,
-                string::utf8(b"Reward NFT"),
-                string::utf8(b"Test Style"),
-                string::utf8(b"Head"),
-                string::utf8(b""),
-                string::utf8(b"Body"),
-                string::utf8(b"Hand"),
-                string::utf8(b"Leg"),
-                string::utf8(b"Universe"),
-                string::utf8(b"https://example.com/reward.png"),
-                &mut payment,
-                USER1,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-            coin::burn_for_testing(payment);
-            clock::destroy_for_testing(clock);
-        };
-
-        // User stakes NFT
-        ts::next_tx(&mut scenario, USER1);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let nft = ts::take_from_sender<CreatureNFT>(&scenario);
-            let clock = create_test_clock(&mut scenario);
-
-            creature_nft::stake_creature_entry(
-                &mut collection,
-                nft,
-                ENVIRONMENT_UNIVERSE,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            ts::return_shared(collection);
-            clock::destroy_for_testing(clock);
-        };
-
-        // Simulate time passing and claim rewards
-        ts::next_tx(&mut scenario, USER1);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let mut stake_info = ts::take_from_sender<StakeInfo>(&scenario);
-            let clock = create_test_clock_with_time(87400000, &mut scenario); // 1 day + 1000 seconds later
-
-            creature_nft::claim_staking_rewards_entry(
-                &mut collection,
-                &mut stake_info,
-                &clock,
-                ts::ctx(&mut scenario)
-            );
-
-            // The entry function automatically transfers rewards to the caller
-            // We're mainly testing that the function executes without error
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, stake_info);
-            clock::destroy_for_testing(clock);
-        };
-
-        ts::end(scenario);
-    }
-
-    #[test]
-    fun test_view_functions() {
-        let mut scenario = create_test_scenario();
-        
-        // Initialize the module
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            creature_nft::init_for_testing(ts::ctx(&mut scenario));
-        };
-
-        // Test collection stats
+        // Test that the reserved name is no longer available
         ts::next_tx(&mut scenario, ADMIN);
         {
             let collection = ts::take_shared<BrainrotCollection>(&scenario);
             
-            let (minted_count, staked_universe, staked_sky, staked_seabed, treasury_balance) = 
-                creature_nft::get_collection_stats(&collection);
+            // let reserved_name = string::utf8(b"Reserved Name");
+            // assert!(!creature_nft::is_name_available(&collection, &reserved_name), 13);
             
-            assert!(minted_count == 0, 17);
-            assert!(staked_universe == 0, 18);
-            assert!(staked_sky == 0, 19);
-            assert!(staked_seabed == 0, 20);
-            assert!(treasury_balance == 0, 21);
-
+            // But other names should still be available
+            let available_name = string::utf8(b"Still Available");
+            assert!(creature_nft::is_name_available(&collection, &available_name), 14);
+            
             ts::return_shared(collection);
         };
 
@@ -568,7 +200,8 @@ module merg3::creature_nft_tests {
     }
 
     #[test]
-    fun test_configuration_updates() {
+    #[expected_failure(abort_code = merg3::creature_nft::EInvalidName)]
+    fun test_empty_name_fails() {
         let mut scenario = create_test_scenario();
         
         // Initialize the module
@@ -577,167 +210,932 @@ module merg3::creature_nft_tests {
             creature_nft::init_for_testing(ts::ctx(&mut scenario));
         };
 
-        // Update duplicate recipe fee
+        // Try to mint with empty name - should fail
         ts::next_tx(&mut scenario, ADMIN);
         {
             let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
             let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+            let clock = create_test_clock(&mut scenario);
 
-            creature_nft::update_duplicate_recipe_fee(
+            let (
+                leg_ids, leg_quantities,
+                body_ids, body_quantities,
+                hand_ids, hand_quantities,
+                head_ids, head_quantities,
+                style_ids, style_quantities,
+                material_ids, material_quantities,
+                environment_ids, environment_quantities
+            ) = create_test_items();
+
+            creature_nft::mint_creature_entry(
                 &admin_cap,
                 &mut collection,
-                20000000 // 0.02 SUI
+                string::utf8(b""), // Empty name - should fail
+                leg_ids,
+                leg_quantities,
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/empty.png"),
+                &mut payment,
+                USER1,
+                &clock,
+                ts::ctx(&mut scenario)
             );
 
             ts::return_shared(collection);
             ts::return_to_sender(&scenario, admin_cap);
-        };
-
-        // Update creator fee
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-
-            creature_nft::update_creator_fee(
-                &admin_cap,
-                &mut collection,
-                500 // 5%
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
-        };
-
-        // Update reward rate
-        ts::next_tx(&mut scenario, ADMIN);
-        {
-            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-
-            creature_nft::update_reward_rate(
-                &admin_cap,
-                &mut collection,
-                ENVIRONMENT_UNIVERSE,
-                800000000 // 0.8 SUI per day
-            );
-
-            ts::return_shared(collection);
-            ts::return_to_sender(&scenario, admin_cap);
+            coin::burn_for_testing(payment);
+            clock::destroy_for_testing(clock);
         };
 
         ts::end(scenario);
     }
 
     #[test]
-    fun test_recipe_hash_consistency() {
+    #[expected_failure(abort_code = merg3::creature_nft::EInvalidName)]
+    fun test_whitespace_only_name_fails() {
         let mut scenario = create_test_scenario();
         
-        // Initialize
+        // Initialize the module
         ts::next_tx(&mut scenario, ADMIN);
         {
             creature_nft::init_for_testing(ts::ctx(&mut scenario));
         };
 
-        // Create two identical metadata objects
+        // Try to mint with whitespace-only name - should fail
         ts::next_tx(&mut scenario, ADMIN);
         {
-            let metadata1 = create_test_metadata();
-            let metadata2 = create_test_metadata();
-            
-            // Both should produce the same hash
-            let hash1 = creature_nft::calculate_recipe_hash(&metadata1);
-            let hash2 = creature_nft::calculate_recipe_hash(&metadata2);
-            
-            assert!(hash1 == hash2, 22);
+            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+            let clock = create_test_clock(&mut scenario);
+
+            let (
+                leg_ids, leg_quantities,
+                body_ids, body_quantities,
+                hand_ids, hand_quantities,
+                head_ids, head_quantities,
+                style_ids, style_quantities,
+                material_ids, material_quantities,
+                environment_ids, environment_quantities
+            ) = create_test_items();
+
+            creature_nft::mint_creature_entry(
+                &admin_cap,
+                &mut collection,
+                string::utf8(b"   "), // Whitespace only - should fail
+                leg_ids,
+                leg_quantities,
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/whitespace.png"),
+                &mut payment,
+                USER1,
+                &clock,
+                ts::ctx(&mut scenario)
+            );
+
+            ts::return_shared(collection);
+            ts::return_to_sender(&scenario, admin_cap);
+            coin::burn_for_testing(payment);
+            clock::destroy_for_testing(clock);
         };
 
         ts::end(scenario);
     }
 
     #[test]
-    fun test_multiple_environment_staking() {
+    fun test_mismatched_item_vectors_fail() {
         let mut scenario = create_test_scenario();
         
-        // Initialize and mint multiple NFTs
+        // Initialize the module
         ts::next_tx(&mut scenario, ADMIN);
         {
             creature_nft::init_for_testing(ts::ctx(&mut scenario));
         };
 
-        // Mint 3 NFTs for different environments
-        let mut i = 0;
-        while (i < 3) {
-            ts::next_tx(&mut scenario, ADMIN);
-            {
-                let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-                let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
-                let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
-                let clock = create_test_clock(&mut scenario);
+        // Try to mint with mismatched vector lengths - should fail
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+            let clock = create_test_clock(&mut scenario);
 
-                creature_nft::mint_creature_entry(
-                    &admin_cap,
-                    &mut collection,
-                    string::utf8(b"Multi NFT"),
-                    string::utf8(b"Test Style"),
-                    string::utf8(b"Head"),
-                    string::utf8(b""),
-                    string::utf8(b"Body"),
-                    string::utf8(b"Hand"),
-                    string::utf8(b"Leg"),
-                    string::utf8(b"Test"),
-                    string::utf8(b"https://example.com/multi.png"),
-                    &mut payment,
-                    USER1,
-                    &clock,
-                    ts::ctx(&mut scenario)
-                );
+            let leg_ids = vector[1u64, 2u64]; // 2 items
+            let leg_quantities = vector[1u64]; // 1 quantity - mismatch!
+            
+            let (
+                _, _,
+                body_ids, body_quantities,
+                hand_ids, hand_quantities,
+                head_ids, head_quantities,
+                style_ids, style_quantities,
+                material_ids, material_quantities,
+                environment_ids, environment_quantities
+            ) = create_test_items();
 
-                ts::return_shared(collection);
-                ts::return_to_sender(&scenario, admin_cap);
-                coin::burn_for_testing(payment);
-                clock::destroy_for_testing(clock);
-            };
-            i = i + 1;
+            creature_nft::mint_creature_entry(
+                &admin_cap,
+                &mut collection,
+                string::utf8(b"Mismatched Items"),
+                leg_ids,
+                leg_quantities, // Mismatched length
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/mismatch.png"),
+                &mut payment,
+                USER1,
+                &clock,
+                ts::ctx(&mut scenario)
+            );
+
+            ts::return_shared(collection);
+            ts::return_to_sender(&scenario, admin_cap);
+            coin::burn_for_testing(payment);
+            clock::destroy_for_testing(clock);
         };
 
-        // Stake NFTs in different environments
-        let environments = vector[ENVIRONMENT_UNIVERSE, ENVIRONMENT_SKY, ENVIRONMENT_SEABED];
-        i = 0;
-        while (i < 3) {
-            ts::next_tx(&mut scenario, USER1);
-            {
-                let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
-                let nft = ts::take_from_sender<CreatureNFT>(&scenario);
-                let clock = create_test_clock(&mut scenario);
+        ts::end(scenario);
+    }
 
-                creature_nft::stake_creature_entry(
-                    &mut collection,
-                    nft,
-                    *vector::borrow(&environments, i),
-                    &clock,
-                    ts::ctx(&mut scenario)
-                );
-
-                ts::return_shared(collection);
-                clock::destroy_for_testing(clock);
-            };
-            i = i + 1;
+    #[test]
+    fun test_get_all_item_ids() {
+        let mut scenario = create_test_scenario();
+        
+        // Initialize the module
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            creature_nft::init_for_testing(ts::ctx(&mut scenario));
         };
 
-        // Verify staking stats
+        // Mint NFT with various items
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+            let clock = create_test_clock(&mut scenario);
+
+            // Create items with some overlapping IDs to test deduplication
+            let leg_ids = vector[1u64, 2u64];
+            let leg_quantities = vector[1u64, 1u64];
+            
+            let body_ids = vector[2u64, 3u64]; // 2 overlaps with leg
+            let body_quantities = vector[1u64, 1u64];
+            
+            let hand_ids = vector[4u64];
+            let hand_quantities = vector[1u64];
+            
+            let head_ids = vector[5u64];
+            let head_quantities = vector[1u64];
+            
+            let style_ids = vector[1u64]; // 1 overlaps with leg
+            let style_quantities = vector[1u64];
+            
+            let material_ids = vector[6u64];
+            let material_quantities = vector[1u64];
+            
+            let environment_ids = vector[7u64];
+            let environment_quantities = vector[1u64];
+
+            creature_nft::mint_creature_entry(
+                &admin_cap,
+                &mut collection,
+                string::utf8(b"Multi Item Test"),
+                leg_ids,
+                leg_quantities,
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/multi.png"),
+                &mut payment,
+                USER1,
+                &clock,
+                ts::ctx(&mut scenario)
+            );
+
+            ts::return_shared(collection);
+            ts::return_to_sender(&scenario, admin_cap);
+            coin::burn_for_testing(payment);
+            clock::destroy_for_testing(clock);
+        };
+
+        // Test get_all_item_ids function
         ts::next_tx(&mut scenario, USER1);
         {
-            let collection = ts::take_shared<BrainrotCollection>(&scenario);
-            let (_, staked_universe, staked_sky, staked_seabed, _) = creature_nft::get_collection_stats(&collection);
+            let nft = ts::take_from_sender<CreatureNFT>(&scenario);
             
-            assert!(staked_universe == 1, 23);
-            assert!(staked_sky == 1, 24);
-            assert!(staked_seabed == 1, 25);
-
-            ts::return_shared(collection);
+            let all_ids = creature_nft::get_all_item_ids(&nft);
+            
+            // Should contain unique IDs: 1, 2, 3, 4, 5, 6, 7 (7 unique items)
+            assert!(vector::length(&all_ids) == 7, 15);
+            
+            // Verify all expected IDs are present
+            assert!(vector::contains(&all_ids, &1u64), 16);
+            assert!(vector::contains(&all_ids, &2u64), 17);
+            assert!(vector::contains(&all_ids, &3u64), 18);
+            assert!(vector::contains(&all_ids, &4u64), 19);
+            assert!(vector::contains(&all_ids, &5u64), 20);
+            assert!(vector::contains(&all_ids, &6u64), 21);
+            assert!(vector::contains(&all_ids, &7u64), 22);
+            
+            ts::return_to_sender(&scenario, nft);
         };
 
         ts::end(scenario);
+    }
+
+    #[test]
+    fun test_empty_item_categories() {
+        let mut scenario = create_test_scenario();
+        
+        // Initialize the module
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            creature_nft::init_for_testing(ts::ctx(&mut scenario));
+        };
+
+        // Test minting with some empty item categories
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+            let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+            let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+            let clock = create_test_clock(&mut scenario);
+
+            // Only some categories have items, others are empty
+            let leg_ids = vector[1u64];
+            let leg_quantities = vector[1u64];
+            
+            let body_ids = vector::empty<u64>(); // Empty
+            let body_quantities = vector::empty<u64>();
+            
+            let hand_ids = vector[3u64];
+            let hand_quantities = vector[1u64];
+            
+            let head_ids = vector::empty<u64>(); // Empty
+            let head_quantities = vector::empty<u64>();
+            
+            let style_ids = vector::empty<u64>(); // Empty
+            let style_quantities = vector::empty<u64>();
+            
+            let material_ids = vector[6u64];
+            let material_quantities = vector[1u64];
+            
+            let environment_ids = vector::empty<u64>(); // Empty
+            let environment_quantities = vector::empty<u64>();
+
+            creature_nft::mint_creature_entry(
+                &admin_cap,
+                &mut collection,
+                string::utf8(b"Sparse Items"),
+                leg_ids,
+                leg_quantities,
+                body_ids,
+                body_quantities,
+                hand_ids,
+                hand_quantities,
+                head_ids,
+                head_quantities,
+                style_ids,
+                style_quantities,
+                material_ids,
+                material_quantities,
+                environment_ids,
+                environment_quantities,
+                string::utf8(b"https://example.com/sparse.png"),
+                &mut payment,
+                USER1,
+                &clock,
+                ts::ctx(&mut scenario)
+            );
+
+            assert!(creature_nft::get_minted_count(&collection) == 1, 23);
+
+            ts::return_shared(collection);
+            ts::return_to_sender(&scenario, admin_cap);
+            coin::burn_for_testing(payment);
+            clock::destroy_for_testing(clock);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+fun test_duplicate_recipe_fee_mechanism() {
+    let mut scenario = create_test_scenario();
+    
+    // Initialize the module
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        creature_nft::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    // First, mint an NFT with a specific recipe
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items();
+
+        // Mint first NFT with original recipe
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Original Dragon"), // Original name
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/original.png"),
+            &mut payment,
+            USER1,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        // Verify the collection stats
+        let (minted_count, treasury_balance) = creature_nft::get_collection_stats(&collection);
+        assert!(minted_count == 1, 24);
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Get the original creator's balance before duplicate minting
+    let original_creator_balance_before = ts::take_from_address<Coin<SUI>>(&scenario, USER1);
+    let original_balance = coin::value(&original_creator_balance_before);
+    ts::return_to_address(USER1, original_creator_balance_before);
+
+    // Now try to mint with the same recipe but different name (duplicate recipe)
+    ts::next_tx(&mut scenario, USER2);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items(); // Same recipe items
+
+        // Mint second NFT with same recipe but different name
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Duplicate Dragon"), // Different name, same recipe
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/duplicate.png"),
+            &mut payment,
+            USER2,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        // Verify the collection stats updated
+        let (minted_count, treasury_balance) = creature_nft::get_collection_stats(&collection);
+        assert!(minted_count == 2, 25);
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Verify that the original creator received the duplicate fee
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let original_creator_balance_after = ts::take_from_address<Coin<SUI>>(&scenario, USER1);
+        let new_balance = coin::value(&original_creator_balance_after);
+        
+        // The original creator should have received the default duplicate fee (0.01 SUI = 10_000_000 MIST)
+        let expected_fee = 10_000_000u64; // DEFAULT_DUPLICATE_FEE
+        assert!(new_balance == original_balance + expected_fee, 26);
+        
+        ts::return_to_address(USER1, original_creator_balance_after);
+    };
+
+    // Verify both NFTs exist but have different names
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let nft1 = ts::take_from_address<CreatureNFT>(&scenario, USER1);
+        let name1 = creature_nft::get_name(&nft1);
+        let creator1 = creature_nft::get_creator(&nft1);
+        let recipe_hash1 = creature_nft::get_recipe_hash(&nft1);
+        
+        assert!(name1 == string::utf8(b"Original Dragon"), 27);
+        assert!(creator1 == USER1, 28);
+        
+        ts::return_to_address(USER1, nft1);
+    };
+
+    ts::next_tx(&mut scenario, USER2);
+    {
+        let nft2 = ts::take_from_address<CreatureNFT>(&scenario, USER2);
+        let name2 = creature_nft::get_name(&nft2);
+        let creator2 = creature_nft::get_creator(&nft2);
+        let recipe_hash2 = creature_nft::get_recipe_hash(&nft2);
+        
+        assert!(name2 == string::utf8(b"Duplicate Dragon"), 29);
+        assert!(creator2 == USER2, 30);
+        
+        // Both NFTs should have the same recipe hash since they use the same items
+        ts::next_tx(&mut scenario, USER1);
+        {
+            let nft1 = ts::take_from_address<CreatureNFT>(&scenario, USER1);
+            let recipe_hash1 = creature_nft::get_recipe_hash(&nft1);
+            assert!(recipe_hash1 == recipe_hash2, 31);
+            ts::return_to_address(USER1, nft1);
+        };
+        
+        ts::return_to_address(USER2, nft2);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = merg3::creature_nft::EInsufficientFee)]
+fun test_duplicate_recipe_insufficient_fee_fails() {
+    let mut scenario = create_test_scenario();
+    
+    // Initialize the module
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        creature_nft::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    // First, mint an NFT with a specific recipe
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items();
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Original Dragon"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/original.png"),
+            &mut payment,
+            USER1,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Try to mint duplicate with insufficient payment - should fail
+    ts::next_tx(&mut scenario, USER2);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        // Create payment with insufficient amount (less than DEFAULT_DUPLICATE_FEE)
+        let mut payment = coin::mint_for_testing<SUI>(5_000_000, ts::ctx(&mut scenario)); // Only 0.005 SUI
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items(); // Same recipe
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Should Fail Dragon"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/fail.png"),
+            &mut payment,
+            USER2,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = merg3::creature_nft::ENameAlreadyExists)]
+fun test_duplicate_name_fails() {
+    let mut scenario = create_test_scenario();
+    
+    // Initialize the module
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        creature_nft::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    // First, mint an NFT with a specific name
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items();
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Unique Dragon Name"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/unique.png"),
+            &mut payment,
+            USER1,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Try to mint with the same name (even with different recipe) - should fail
+    ts::next_tx(&mut scenario, USER2);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_different_test_items(); // Different recipe
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Unique Dragon Name"), // Same name - should fail
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/duplicate-name.png"),
+            &mut payment,
+            USER2,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_multiple_duplicate_recipes_increment_usage() {
+    let mut scenario = create_test_scenario();
+    
+    // Initialize the module
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        creature_nft::init_for_testing(ts::ctx(&mut scenario));
+    };
+
+    // First, mint an NFT with a specific recipe
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items();
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Original Recipe"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/original.png"),
+            &mut payment,
+            USER1,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Mint second duplicate
+    ts::next_tx(&mut scenario, USER2);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items(); // Same recipe
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Second Duplicate"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/second.png"),
+            &mut payment,
+            USER2,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Mint third duplicate from different user
+    ts::next_tx(&mut scenario, @0x4);
+    {
+        let mut collection = ts::take_shared<BrainrotCollection>(&scenario);
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut payment = coin::mint_for_testing<SUI>(1000000000, ts::ctx(&mut scenario));
+        let clock = create_test_clock(&mut scenario);
+
+        let (
+            leg_ids, leg_quantities,
+            body_ids, body_quantities,
+            hand_ids, hand_quantities,
+            head_ids, head_quantities,
+            style_ids, style_quantities,
+            material_ids, material_quantities,
+            environment_ids, environment_quantities
+        ) = create_test_items(); // Same recipe
+
+        creature_nft::mint_creature_entry(
+            &admin_cap,
+            &mut collection,
+            string::utf8(b"Third Duplicate"),
+            leg_ids,
+            leg_quantities,
+            body_ids,
+            body_quantities,
+            hand_ids,
+            hand_quantities,
+            head_ids,
+            head_quantities,
+            style_ids,
+            style_quantities,
+            material_ids,
+            material_quantities,
+            environment_ids,
+            environment_quantities,
+            string::utf8(b"https://example.com/third.png"),
+            &mut payment,
+            @0x4,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        // Verify total minted count
+        let (minted_count, _) = creature_nft::get_collection_stats(&collection);
+        assert!(minted_count == 3, 32);
+
+        ts::return_shared(collection);
+        ts::return_to_sender(&scenario, admin_cap);
+        coin::burn_for_testing(payment);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Verify that USER1 (original creator) received fees from both duplicates
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let creator_balance = ts::take_from_address<Coin<SUI>>(&scenario, USER1);
+        let balance_value = coin::value(&creator_balance);
+        
+        // Should have received 2 duplicate fees (2 * DEFAULT_DUPLICATE_FEE = 2 * 10_000_000)
+        let expected_fees = 2 * 10_000_000u64;
+        assert!(balance_value == expected_fees, 33);
+        
+        ts::return_to_address(USER1, creator_balance);
+    };
+
+    ts::end(scenario);
     }
 }

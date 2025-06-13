@@ -20,6 +20,8 @@ module merg3::creature_nft {
     const EInsufficientFee: u64 = 1;
     const ENameAlreadyExists: u64 = 11;
     const EInvalidName: u64 = 12;
+    const EInvalidItemVector: u64 = 13;
+    const EInvalidPaymentAmount: u64 = 14;
 
     /// Default values
     const DEFAULT_CREATOR_FEE_BPS: u16 = 250; // 2.5%
@@ -229,6 +231,7 @@ module merg3::creature_nft {
         metadata: NFTMetadata,
         payment: &mut Coin<SUI>,
         clock: &Clock,
+        recipient: address,
         ctx: &mut TxContext
     ): CreatureNFT {
         let sender = tx_context::sender(ctx);
@@ -249,7 +252,7 @@ module merg3::creature_nft {
             increment_recipe_usage(collection, &recipe_hash);
         } else {
             // New item combination - store recipe
-            store_recipe(collection, recipe_hash, sender, &metadata, clock);
+            store_recipe(collection, recipe_hash, recipient, &metadata, clock);
         };
 
         let nft = CreatureNFT {
@@ -421,6 +424,9 @@ module merg3::creature_nft {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
+
+        assert!(coin::value(payment) == collection.config.duplicate_recipe_fee, EInvalidPaymentAmount);
+
         let leg_items = build_simple_items(leg_item_ids, leg_quantities);
         let body_items = build_simple_items(body_item_ids, body_quantities);
         let hand_items = build_simple_items(hand_item_ids, hand_quantities);
@@ -443,7 +449,7 @@ module merg3::creature_nft {
             clock
         );
         
-        let nft = mint_creature_nft(collection, metadata, payment, clock, ctx);
+        let nft = mint_creature_nft(collection, metadata, payment, clock, recipient,ctx);
         transfer::public_transfer(nft, recipient);
     }
 
