@@ -331,6 +331,24 @@ module merg3::pool_rewards {
         });
     }
 
+    public entry fun add_sui_rewards_from_balance(
+        _: &PoolAdminCap,
+        pool_system: &mut PoolSystem,
+        pool_id: ID,
+        reward_coin: Coin<SUI>,
+    ) {
+        let pool = object_table::borrow_mut(&mut pool_system.pools, pool_id);
+        let amount = coin::value(&reward_coin);
+        
+        let reward_balance = coin::into_balance(reward_coin);
+        balance::join(&mut pool.sui_reward_pool, reward_balance);
+        
+        event::emit(SuiRewardsAdded {
+            pool_id,
+            sui_amount: amount,
+        });
+    }
+
     // ========== Staking Functions ==========
 
     public entry fun stake_nft(
@@ -487,6 +505,184 @@ module merg3::pool_rewards {
         });
     }
 
+    fun calculate_user_current_weight(pool: &Pool, user: address, current_time: u64): u64 {
+        if (!table::contains(&pool.user_stakes, user)) {
+            return 0
+        };
+
+        let mut total_user_weight = 0;
+        let len = vector::length(&pool.staked_nft_ids);
+        let mut i = 0;
+    
+        // Iterate through all staked NFTs to find user's NFTs
+        while (i < len) {
+            let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
+            
+            if (object_table::contains(&pool.staked_nfts, nft_id)) {
+                let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
+                
+                // Check if this NFT belongs to the user
+                if (staked_nft.owner == user) {
+                    let stake_duration_ms = current_time - staked_nft.stake_time;
+                    let stake_hours = stake_duration_ms / MS_PER_HOUR;
+                    let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
+                    
+                    total_user_weight = total_user_weight + nft_weight;
+                };
+            };
+            
+            i = i + 1;
+        };
+        
+        total_user_weight
+    }
+
+    fun calculate_total_current_weight(pool: &Pool, current_time: u64): u64 {
+        let mut total_weight = 0;
+        let len = vector::length(&pool.staked_nft_ids);
+        let mut i = 0;
+        
+        // Iterate through all staked NFTs
+        while (i < len) {
+            let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
+            
+            if (object_table::contains(&pool.staked_nfts, nft_id)) {
+                let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
+                
+                let stake_duration_ms = current_time - staked_nft.stake_time;
+                let stake_hours = stake_duration_ms / MS_PER_HOUR;
+                let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
+                
+                total_weight = total_weight + nft_weight;
+            };
+            
+            i = i + 1;
+        };
+        
+        total_weight
+    }
+
+    // Updated claim_rewards function using dynamic calculation
+    public entry fun claim_rewards_dynamic(
+        pool_system: &mut PoolSystem,
+        pool_id: ID,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let pool = object_table::borrow_mut(&mut pool_system.pools, pool_id);
+        let owner = tx_context::sender(ctx);
+        
+        assert!(table::contains(&pool.user_stakes, owner), ENoStakedNFTs);
+        
+        let current_time = clock::timestamp_ms(clock);
+        
+        // Calculate current weights dynamically
+        let user_weight = calculate_user_current_weight(pool, owner, current_time);
+        let total_weight = calculate_total_current_weight(pool, current_time);
+        
+        // Calculate reward based on current weight ratio
+        let sui_reward = if (total_weight == 0 || user_weight == 0) {
+            0
+        } else {
+            let pool_sui_balance = balance::value(&pool.sui_reward_pool);
+            (pool_sui_balance * user_weight) / total_weight
+        };
+        
+        // Transfer rewards if available
+        if (sui_reward > 0 && balance::value(&pool.sui_reward_pool) >= sui_reward) {
+            let user_info = table::borrow_mut(&mut pool.user_stakes, owner);
+            user_info.last_reward_claim = current_time;
+            
+            let reward_balance = balance::split(&mut pool.sui_reward_pool, sui_reward);
+            let reward_coin = coin::from_balance(reward_balance, ctx);
+            transfer::public_transfer(reward_coin, owner);
+            
+            event::emit(RewardsClaimed {
+                pool_id,
+                user: owner,
+                sui_amount: sui_reward,
+            });
+        };
+    }
+
+    // Updated get_user_reward_details function using dynamic calculation
+    public fun get_user_reward_details_dynamic(
+        pool_system: &PoolSystem,
+        pool_id: ID,
+        user: address,
+        clock: &Clock
+    ): (u64, u64, u64, u64, u64, u64) {
+        assert!(object_table::contains(&pool_system.pools, pool_id), EPoolNotFound);
+        
+        let pool = object_table::borrow(&pool_system.pools, pool_id);
+        let current_time = clock::timestamp_ms(clock);
+        
+        if (!table::contains(&pool.user_stakes, user)) {
+            return (0, 0, 0, 0, 0, 0)
+        };
+        
+        let user_info = table::borrow(&pool.user_stakes, user);
+        
+        // Calculate current weights dynamically
+        let user_weight = calculate_user_current_weight(pool, user, current_time);
+        let total_pool_weight = calculate_total_current_weight(pool, current_time);
+        
+        // Calculate potential rewards based on current weight
+        let potential_rewards = if (total_pool_weight > 0 && user_weight > 0) {
+            let pool_balance = balance::value(&pool.sui_reward_pool);
+            (pool_balance * user_weight) / total_pool_weight
+        } else {
+            0
+        };
+        
+        // Calculate total stake time
+        let stake_duration_ms = current_time - user_info.stake_start_time;
+        
+        (
+            user_info.nft_count,        // NFTs staked
+            user_weight,                // Current total weight
+            total_pool_weight,           // Total Pool weight
+            potential_rewards,          // Current claimable rewards
+            stake_duration_ms,          // Total stake time (ms)
+            current_time               // Current timestamp
+        )
+    }
+
+    // Helper function to get user's NFT weights breakdown (for debugging/UI)
+    public fun get_user_nft_weights(
+        pool_system: &PoolSystem,
+        pool_id: ID,
+        user: address,
+        clock: &Clock
+    ): vector<u64> {
+        let pool = object_table::borrow(&pool_system.pools, pool_id);
+        let current_time = clock::timestamp_ms(clock);
+        let mut weights = vector::empty<u64>();
+        
+        let len = vector::length(&pool.staked_nft_ids);
+        let mut i = 0;
+        
+        while (i < len) {
+            let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
+            
+            if (object_table::contains(&pool.staked_nfts, nft_id)) {
+                let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
+                
+                if (staked_nft.owner == user) {
+                    let stake_duration_ms = current_time - staked_nft.stake_time;
+                    let stake_hours = stake_duration_ms / MS_PER_HOUR;
+                    let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
+                    
+                    vector::push_back(&mut weights, nft_weight);
+                };
+            };
+            
+            i = i + 1;
+        };
+        
+        weights
+    }
+
     public entry fun claim_rewards(
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -614,10 +810,6 @@ module merg3::pool_rewards {
         creature_nft::get_all_item_ids(nft)
     }
     
-    // Helper function to extract item IDs from a category
-    // This function is no longer needed since we use creature_nft::get_all_item_ids()
-    // Removed to avoid field access issues
-
     fun update_all_nft_weights(pool: &mut Pool, current_time: u64) {
         // Now we can iterate through NFT IDs using our tracking vector
         let mut new_total_weight = 0;

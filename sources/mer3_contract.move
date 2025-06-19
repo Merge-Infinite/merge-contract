@@ -20,7 +20,6 @@ module merg3::creature_nft {
     const EInsufficientFee: u64 = 1;
     const ENameAlreadyExists: u64 = 11;
     const EInvalidName: u64 = 12;
-    const EInvalidItemVector: u64 = 13;
     const EInvalidPaymentAmount: u64 = 14;
 
     /// Default values
