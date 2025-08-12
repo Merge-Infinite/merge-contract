@@ -5,12 +5,12 @@ sui client call \
   --args \
     0x417e3cdaaeb94175612918c7a8078453dcdf654440bbb0098e1764f5917bb848 \
    0x41fce698233d9163d93754e76c8dc1c6c7c4b04231491f632aead72b5c0d2e01 \
-    "Required Element Pool" \
-    "Required elements lava, volcano, tornado" \
-    '[6,12,11]' \
+    "Empty Element Pool 2" \
+    "Empty elements 2" \
+    '[]' \
     1749379144000 \
     "https://app.merg3.xyz/images/sui.svg" \
-    1750677941000 \
+    1755247014000 \
     0x6 \
   --gas-budget 10000000
 
@@ -21,7 +21,7 @@ sui client call \
   --args \
     0x417e3cdaaeb94175612918c7a8078453dcdf654440bbb0098e1764f5917bb848 \
    0x41fce698233d9163d93754e76c8dc1c6c7c4b04231491f632aead72b5c0d2e01 \
-    0x4c98d6d44d414a98506c009c242bf378d3bc63da87a74dbd0641868789b0b570 \
+    0x7d54581fec5049a58ad534ce5a39669ac00ef15dd565f1ee5a983a8172e0dba4 \
     0x6 \
   --gas-budget 10000000
 
@@ -38,8 +38,8 @@ sui client call \
 
 
 sui client pay-sui \
---input-coins 0x9c399f425abad605a7d42862dfa72181c4f697a7dcde7d42780aa44e6ca74c9f \
---amounts 10000000 \
+--input-coins 0x060b4c5d10ccc962143f56c1e353b95a99a8a346c0bfddf715e1ff48356b66d3 \
+--amounts 30000000 \
 --recipients 0xce1b022dd5633fae11efabc9a48c871637b66c2f3e608929cf8fd4ba7683e205 \
   --gas-budget 10000000
 
@@ -50,7 +50,7 @@ sui client call \
   --args \
     0x417e3cdaaeb94175612918c7a8078453dcdf654440bbb0098e1764f5917bb848 \
     0x41fce698233d9163d93754e76c8dc1c6c7c4b04231491f632aead72b5c0d2e01 \
-    0x541b9eda8b91cc19f79b2863f86900e6978f83e91a1b2c97316515d955b2a7d0 \
-    0x636dbed3e001ba42b46a6ec61d4086e6c911d5362a2ccfd3842bc3cc2583c54b \
+    0x7d54581fec5049a58ad534ce5a39669ac00ef15dd565f1ee5a983a8172e0dba4 \
+    0x0972fd214e552b455f65c50c04103dfdc202577f0890c217be3ec2afe2c7ef42 \
   --gas-budget 10000000
 

@@ -471,6 +471,85 @@ module merg3::creature_nft {
         items
     }
 
+    public entry fun mint_from_prompt(
+        _: &AdminCap,
+        collection: &mut BrainrotCollection,
+        name: String,
+        element_ids: vector<u64>,
+        element_quantities: vector<u64>,
+        image_uri: String,
+        payment: &mut Coin<SUI>,
+        recipient: address,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(coin::value(payment) == collection.config.duplicate_recipe_fee, EInvalidPaymentAmount);
+
+        let leg_items = vector::empty<ItemInfo>();
+        let body_items = vector::empty<ItemInfo>();
+        let hand_items =  vector::empty<ItemInfo>();
+        let head_items = vector::empty<ItemInfo>();
+        let style_items = vector::empty<ItemInfo>();
+        let material_items = build_simple_items(element_ids, element_quantities);
+        let environment_items = vector::empty<ItemInfo>();
+        
+        // Create metadata (with name validation)
+        let metadata = create_nft_metadata(
+            name,
+            leg_items,
+            body_items,
+            hand_items,
+            head_items,
+            style_items,
+            material_items,
+            environment_items,
+            image_uri,
+            clock
+        );
+        
+        let nft = mint_creature_nft(collection, metadata, payment, clock, recipient,ctx);
+        transfer::public_transfer(nft, recipient);
+    }
+
+    public entry fun mint_from_elements(
+        collection: &mut BrainrotCollection,
+        name: String,
+        element_ids: vector<u64>,
+        element_quantities: vector<u64>,
+        image_uri: String,
+        payment: &mut Coin<SUI>,
+        recipient: address,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(coin::value(payment) == collection.config.duplicate_recipe_fee, EInvalidPaymentAmount);
+
+        let leg_items = vector::empty<ItemInfo>();
+        let body_items = vector::empty<ItemInfo>();
+        let hand_items =  vector::empty<ItemInfo>();
+        let head_items = vector::empty<ItemInfo>();
+        let style_items = vector::empty<ItemInfo>();
+        let material_items = build_simple_items(element_ids, element_quantities);
+        let environment_items = vector::empty<ItemInfo>();
+        
+        // Create metadata (with name validation)
+        let metadata = create_nft_metadata(
+            name,
+            leg_items,
+            body_items,
+            hand_items,
+            head_items,
+            style_items,
+            material_items,
+            environment_items,
+            image_uri,
+            clock
+        );
+        
+        let nft = mint_creature_nft(collection, metadata, payment, clock, recipient,ctx);
+        transfer::public_transfer(nft, recipient);
+    }
+
     public fun create_nft_metadata(
         name: String,
         leg_items: vector<ItemInfo>,

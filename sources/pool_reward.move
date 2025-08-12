@@ -25,9 +25,11 @@ module merg3::pool_rewards {
     const ENoStakedNFTs: u64 = 8;
     const ERewardsNotReady: u64 = 9;
     const EElementNotFound: u64 = 11;
+    const EClaimTooSoon: u64 = 12;
 
     /// Time constants
     const MS_PER_HOUR: u64 = 3_600_000;
+    const MS_PER_DAY: u64 = 86_400_000;
     const REWARD_UPDATE_INTERVAL: u64 = 21_600_000; // 6 hours
 
     /// Admin capability for pool management
@@ -575,6 +577,12 @@ module merg3::pool_rewards {
         assert!(table::contains(&pool.user_stakes, owner), ENoStakedNFTs);
         
         let current_time = clock::timestamp_ms(clock);
+        let user_info = table::borrow(&pool.user_stakes, owner);
+        
+        // Check if enough time has passed since last claim based on reclaim period
+        let time_since_last_claim = current_time - user_info.last_reward_claim;
+        let reclaim_period_ms = 1 * MS_PER_DAY;
+        assert!(time_since_last_claim >= reclaim_period_ms || user_info.last_reward_claim == 0, EClaimTooSoon);
         
         // Calculate current weights dynamically
         let user_weight = calculate_user_current_weight(pool, owner, current_time);
@@ -648,6 +656,37 @@ module merg3::pool_rewards {
         )
     }
 
+
+    public fun get_user_staked_nft_ids(
+        pool_system: &PoolSystem,
+        pool_id: ID,
+        user: address
+    ): vector<ID> {
+        assert!(object_table::contains(&pool_system.pools, pool_id), EPoolNotFound);
+        
+        let pool = object_table::borrow(&pool_system.pools, pool_id);
+        let mut user_nft_ids = vector::empty<ID>();
+        
+        let len = vector::length(&pool.staked_nft_ids);
+        let mut i = 0;
+        
+        while (i < len) {
+            let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
+            
+            if (object_table::contains(&pool.staked_nfts, nft_id)) {
+                let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
+                
+                if (staked_nft.owner == user) {
+                    vector::push_back(&mut user_nft_ids, nft_id);
+                };
+            };
+            
+            i = i + 1;
+        };
+        
+        user_nft_ids
+    }
+
     // Helper function to get user's NFT weights breakdown (for debugging/UI)
     public fun get_user_nft_weights(
         pool_system: &PoolSystem,
@@ -689,50 +728,7 @@ module merg3::pool_rewards {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        let pool = object_table::borrow_mut(&mut pool_system.pools, pool_id);
-        let owner = tx_context::sender(ctx);
-        
-        assert!(table::contains(&pool.user_stakes, owner), ENoStakedNFTs);
-        
-        let current_time = clock::timestamp_ms(clock);
-        
-        // Calculate reward amounts based on user weight ratio
-        let user_info = table::borrow_mut(&mut pool.user_stakes, owner);
-        
-        // Get values we need before calling calculate function
-        let user_weight = user_info.total_weight;
-        let pool_total_weight = pool.total_weight;
-        let pool_sui_balance = balance::value(&pool.sui_reward_pool);
-        
-        // Calculate rewards using local values (not borrowing pool)
-        let sui_reward = if (pool_total_weight == 0 || user_weight == 0) {
-            0
-        } else {
-            (pool_sui_balance * user_weight) / pool_total_weight
-        };
-        
-        // Add to pending rewards
-        user_info.pending_sui_rewards = user_info.pending_sui_rewards + sui_reward;
-        
-        // Transfer SUI rewards if available
-        if (user_info.pending_sui_rewards > 0 && 
-            pool_sui_balance >= user_info.pending_sui_rewards) {
-            
-            let claimed_sui = user_info.pending_sui_rewards;
-            user_info.pending_sui_rewards = 0;
-            user_info.last_reward_claim = current_time;
-            
-            // Now we can borrow pool mutably for the balance split
-            let reward_balance = balance::split(&mut pool.sui_reward_pool, claimed_sui);
-            let reward_coin = coin::from_balance(reward_balance, ctx);
-            transfer::public_transfer(reward_coin, owner);
-            
-            event::emit(RewardsClaimed {
-                pool_id,
-                user: owner,
-                sui_amount: claimed_sui,
-            });
-        };
+
     }
 
         // ========== Admin Treasury Management ==========
