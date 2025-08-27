@@ -104,7 +104,7 @@ module merg3::creative_element_nft {
 
     // ========== Minting Functions ==========
 
-    public entry fun mint_with_admin(
+    public fun mint_with_admin(
         _admin: &AdminCap,
         collection: &mut ElementCollection,
         element_name: String,
@@ -129,7 +129,7 @@ module merg3::creative_element_nft {
         );
     }
 
-    public entry fun mint_creative_element(
+    public fun mint_creative_element(
         collection: &mut ElementCollection,
         element_name: String,
         amount: u64,
@@ -188,7 +188,7 @@ module merg3::creative_element_nft {
     }
 
     /// Burns a CreativeElementNFT
-    public entry fun burn(nft: CreativeElementNFT, _: &mut TxContext) {
+    public fun burn(nft: CreativeElementNFT, _: &mut TxContext) {
         let CreativeElementNFT { 
             id, 
             element_name: _, 
@@ -204,7 +204,7 @@ module merg3::creative_element_nft {
 
     // ========== Admin Functions ==========
 
-    public entry fun add_treasury_funds(
+    public fun add_treasury_funds(
         _: &AdminCap,
         collection: &mut ElementCollection,
         payment: &mut Coin<SUI>,
@@ -215,7 +215,7 @@ module merg3::creative_element_nft {
         balance::join(&mut collection.treasury, coin::into_balance(coin_balance));
     }
 
-    public entry fun update_creator_fee(
+    public fun update_creator_fee(
         _: &AdminCap,
         collection: &mut ElementCollection,
         fee_bps: u16,

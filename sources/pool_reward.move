@@ -84,7 +84,7 @@ module merg3::pool_rewards {
         participant_count: u64,
     }
 
-    public struct UserStakeInfo has store {
+    public struct UserStakeInfo has store, drop {
         nft_count: u64,
         total_weight: u64,
         stake_start_time: u64,
@@ -170,6 +170,12 @@ module merg3::pool_rewards {
         new_end_time: u64,
     }
 
+    public struct PoolDeleted has copy, drop {
+        pool_id: ID,
+        deleted_by: address,
+        funds_withdrawn: u64,
+    }
+
     public struct POOL_REWARDS has drop {}
 
     // ========== Initialization ==========
@@ -195,7 +201,7 @@ module merg3::pool_rewards {
 
     // ========== Pool Management Functions ==========
 
-    public entry fun create_pool(
+    public fun create_pool(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         name: String,
@@ -250,7 +256,7 @@ module merg3::pool_rewards {
         object_table::add(&mut pool_system.pools, pool_id, pool);
     }
 
-    public entry fun start_pool(
+    public fun start_pool(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -270,7 +276,7 @@ module merg3::pool_rewards {
         });
     }
 
-    public entry fun end_pool(
+    public fun end_pool(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -292,7 +298,7 @@ module merg3::pool_rewards {
         });
     }
 
-    public entry fun extend_pool_time(
+    public fun extend_pool_time(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -312,7 +318,7 @@ module merg3::pool_rewards {
 
     // ========== Reward Management ==========
 
-    public entry fun add_sui_rewards(
+    public fun add_sui_rewards(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -333,7 +339,7 @@ module merg3::pool_rewards {
         });
     }
 
-    public entry fun add_sui_rewards_from_balance(
+    public fun add_sui_rewards_from_balance(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -353,7 +359,7 @@ module merg3::pool_rewards {
 
     // ========== Staking Functions ==========
 
-    public entry fun stake_nft(
+    public fun stake_nft(
         pool_system: &mut PoolSystem,
         pool_id: ID,
         nft: CreatureNFT,
@@ -423,7 +429,7 @@ module merg3::pool_rewards {
         });
     }
 
-    public entry fun unstake_nft(
+    public fun unstake_nft(
         pool_system: &mut PoolSystem,
         pool_id: ID,
         nft_id: ID,
@@ -482,7 +488,7 @@ module merg3::pool_rewards {
 
     // ========== Reward Calculation and Distribution ==========
 
-    public entry fun update_pool_rewards(
+    public fun update_pool_rewards(
         pool_system: &mut PoolSystem,
         pool_id: ID,
         clock: &Clock,
@@ -565,7 +571,7 @@ module merg3::pool_rewards {
     }
 
     // Updated claim_rewards function using dynamic calculation
-    public entry fun claim_rewards_dynamic(
+    public fun claim_rewards_dynamic(
         pool_system: &mut PoolSystem,
         pool_id: ID,
         clock: &Clock,
@@ -579,6 +585,12 @@ module merg3::pool_rewards {
         let current_time = clock::timestamp_ms(clock);
         let user_info = table::borrow(&pool.user_stakes, owner);
         
+        // Check if user has any NFTs currently staked
+        // If user unstaked all NFTs, nft_count will be 0, so no rewards can be claimed
+        if (user_info.nft_count == 0) {
+            return
+        };
+        
         // Check if enough time has passed since last claim based on reclaim period
         let time_since_last_claim = current_time - user_info.last_reward_claim;
         let reclaim_period_ms = 1 * MS_PER_DAY;
@@ -589,6 +601,7 @@ module merg3::pool_rewards {
         let total_weight = calculate_total_current_weight(pool, current_time);
         
         // Calculate reward based on current weight ratio
+        // Additional check: if user_weight is 0 (no staked NFTs), return 0 reward
         let sui_reward = if (total_weight == 0 || user_weight == 0) {
             0
         } else {
@@ -722,18 +735,8 @@ module merg3::pool_rewards {
         weights
     }
 
-    public entry fun claim_rewards(
-        pool_system: &mut PoolSystem,
-        pool_id: ID,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
 
-    }
-
-        // ========== Admin Treasury Management ==========
-
-    public entry fun withdraw_pool_funds(
+    public fun withdraw_pool_funds(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -753,7 +756,7 @@ module merg3::pool_rewards {
         transfer::public_transfer(withdrawn_coin, recipient);
     }
 
-    public entry fun emergency_withdraw_all(
+    public fun emergency_withdraw_all(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,
@@ -772,33 +775,123 @@ module merg3::pool_rewards {
         transfer::public_transfer(all_coins, recipient);
     }
 
+    /// Delete a pool - withdraws all funds and returns staked NFTs to owners
+    public fun delete_pool(
+        _: &PoolAdminCap,
+        pool_system: &mut PoolSystem,
+        pool_id: ID,
+        recipient: address,
+        ctx: &mut TxContext
+    ) {
+        assert!(object_table::contains(&pool_system.pools, pool_id), EPoolNotFound);
+        
+        // Remove the pool from the system
+        let mut pool = object_table::remove(&mut pool_system.pools, pool_id);
+        
+        // First, deactivate the pool
+        pool.is_active = false;
+        
+        // Withdraw all remaining funds from the pool
+        let remaining_balance = balance::value(&pool.sui_reward_pool);
+        if (remaining_balance > 0) {
+            let all_balance = balance::withdraw_all(&mut pool.sui_reward_pool);
+            let all_coins = coin::from_balance(all_balance, ctx);
+            transfer::public_transfer(all_coins, recipient);
+        };
+        
+        // Return all staked NFTs to their owners
+        let mut i = 0;
+        let len = vector::length(&pool.staked_nft_ids);
+        
+        while (i < len) {
+            let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
+            
+            // Check if NFT exists in the staked NFTs table
+            if (object_table::contains(&pool.staked_nfts, nft_id)) {
+                let staked_nft = object_table::remove(&mut pool.staked_nfts, nft_id);
+                let owner_address = staked_nft.owner;
+                
+                // Destructure the StakedNFT and return the NFT to its owner
+                let StakedNFT { id, nft, owner: _, pool_id: _, stake_time: _, weight: _ } = staked_nft;
+                object::delete(id);
+                transfer::public_transfer(nft, owner_address);
+            };
+            
+            i = i + 1;
+        };
+        
+        // Clean up the pool structure
+        let Pool {
+            id,
+            pool_id: _,
+            name: _,
+            description: _,
+            creator: _,
+            image_url: _,
+            required_elements: _,
+            start_time: _,
+            end_time: _,
+            is_active: _,
+            sui_reward_pool: remaining_sui_balance,
+            last_reward_update: _,
+            staked_nfts,
+            user_stakes,
+            total_staked_count: _,
+            total_weight: _,
+            staked_nft_ids: _,
+            unique_participants,
+            participant_count: _,
+        } = pool;
+        
+        // Ensure all balances are empty before deletion
+        balance::destroy_zero(remaining_sui_balance);
+        
+        // Delete the tables and object tables
+        object_table::destroy_empty(staked_nfts);
+        table::drop(user_stakes);
+        table::drop(unique_participants);
+        
+        // Delete the pool object
+        object::delete(id);
+        
+        // Emit an event for pool deletion
+        event::emit(PoolDeleted {
+            pool_id,
+            deleted_by: tx_context::sender(ctx),
+            funds_withdrawn: remaining_balance,
+        });
+    }
+
     // ========== Helper Functions ==========
 
     fun validate_nft_requirements(pool: &Pool, nft: &CreatureNFT) {
-        // Check if NFT has any of the required elements
+        // Check if NFT has ALL required elements
         if (vector::length(&pool.required_elements) > 0) {
-            let nft_has_required_element = check_nft_has_required_elements(nft, &pool.required_elements);
-            assert!(nft_has_required_element, EElementNotFound);
+            let nft_has_all_required_elements = check_nft_has_all_required_elements(nft, &pool.required_elements);
+            assert!(nft_has_all_required_elements, EElementNotFound);
         };
     }
 
-    fun check_nft_has_required_elements(nft: &CreatureNFT, required_elements: &vector<u64>): bool {
+    fun check_nft_has_all_required_elements(nft: &CreatureNFT, required_elements: &vector<u64>): bool {
         // Extract all element IDs from the NFT metadata
         let nft_element_ids = extract_nft_element_ids(nft);
         
-        // Check if NFT has any of the required elements
+        // Check if NFT has ALL of the required elements
+        // For example, if pool requires [1, 2], NFT must have both element 1 AND element 2
         let mut i = 0;
         let req_len = vector::length(required_elements);
         
         while (i < req_len) {
             let required_id = *vector::borrow(required_elements, i);
-            if (vector::contains(&nft_element_ids, &required_id)) {
-                return true
+            // If NFT doesn't have this required element, return false
+            if (!vector::contains(&nft_element_ids, &required_id)) {
+                return false
             };
             i = i + 1;
         };
         
-        false
+        // NFT has all required elements
+        true
     }
 
     fun extract_nft_element_ids(nft: &CreatureNFT): vector<u64> {
@@ -1009,7 +1102,7 @@ module merg3::pool_rewards {
         }
     }
 
-    public entry fun update_pool_image_url(
+    public fun update_pool_image_url(
         _: &PoolAdminCap,
         pool_system: &mut PoolSystem,
         pool_id: ID,

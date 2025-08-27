@@ -33,3 +33,4 @@ merg3 = "0x0"
 # The dev-addresses section allows overwriting named addresses for the `--test`
 # and `--dev` modes.
 # alice = "0xB0B"
+#upgrade_cap = "0x1e90bec38e218439b856ef13c31f16b6b8d5b649601e18c3421632b01c0948e2"
