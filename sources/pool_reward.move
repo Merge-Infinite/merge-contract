@@ -29,8 +29,6 @@ module merg3::pool_rewards {
 
     /// Time constants
     const MS_PER_HOUR: u64 = 3_600_000;
-    const MS_PER_DAY: u64 = 86_400_000;
-    const REWARD_UPDATE_INTERVAL: u64 = 21_600_000; // 6 hours
 
     /// Admin capability for pool management
     public struct PoolAdminCap has key {
@@ -46,7 +44,7 @@ module merg3::pool_rewards {
     }
 
     public struct GlobalConfig has store {
-        reward_update_interval: u64,
+        claim_time_interval: u64,
     }
 
     /// Individual pool configuration and state
@@ -88,7 +86,6 @@ module merg3::pool_rewards {
         nft_count: u64,
         total_weight: u64,
         stake_start_time: u64,
-        pending_sui_rewards: u64,
         last_reward_claim: u64,
     }
 
@@ -137,7 +134,6 @@ module merg3::pool_rewards {
         nft_id: ID,
         owner: address,
         stake_duration: u64,
-        rewards_forfeited: bool,
     }
 
     public struct RewardsUpdated has copy, drop {
@@ -191,12 +187,23 @@ module merg3::pool_rewards {
             pools: object_table::new(ctx),
             pool_counter: 0,
             global_config: GlobalConfig {
-                reward_update_interval: REWARD_UPDATE_INTERVAL,
+                claim_time_interval: 500_000,
             },
         };
 
         transfer::transfer(admin_cap, tx_context::sender(ctx));
         transfer::share_object(pool_system);
+    }
+
+    // ========== Admin Functions ==========
+
+    public fun update_claim_time_interval(
+        _: &PoolAdminCap,
+        pool_system: &mut PoolSystem,
+        new_interval: u64,
+        _ctx: &mut TxContext
+    ) {
+        pool_system.global_config.claim_time_interval = new_interval;
     }
 
     // ========== Pool Management Functions ==========
@@ -406,7 +413,6 @@ module merg3::pool_rewards {
                 nft_count: 1,
                 total_weight: weight,
                 stake_start_time: stake_time,
-                pending_sui_rewards: 0,
                 last_reward_claim: stake_time,
             });
         } else {
@@ -447,9 +453,8 @@ module merg3::pool_rewards {
         let current_time = clock::timestamp_ms(clock);
         let stake_duration = current_time - staked_nft.stake_time;
         
-        // Check if unstaking within 6-hour window (forfeit rewards)
+        // Check if unstaking within reward update interval window (forfeit rewards)
         let time_since_last_update = current_time - pool.last_reward_update;
-        let rewards_forfeited = time_since_last_update < REWARD_UPDATE_INTERVAL;
         
         // Update pool statistics
         pool.total_staked_count = pool.total_staked_count - 1;
@@ -460,10 +465,6 @@ module merg3::pool_rewards {
         user_info.nft_count = user_info.nft_count - 1;
         user_info.total_weight = user_info.total_weight - staked_nft.weight;
         
-        // If forfeiting rewards, clear pending rewards
-        if (rewards_forfeited) {
-            user_info.pending_sui_rewards = 0;
-        };
         
         // Return the NFT
         let StakedNFT { id, nft, owner: _, pool_id: _, stake_time: _, weight: _ } = staked_nft;
@@ -482,40 +483,20 @@ module merg3::pool_rewards {
             nft_id,
             owner,
             stake_duration,
-            rewards_forfeited,
         });
     }
 
-    // ========== Reward Calculation and Distribution ==========
-
-    public fun update_pool_rewards(
-        pool_system: &mut PoolSystem,
-        pool_id: ID,
-        clock: &Clock,
-        _ctx: &mut TxContext
-    ) {
-        let pool = object_table::borrow_mut(&mut pool_system.pools, pool_id);
-        let current_time = clock::timestamp_ms(clock);
-        
-        // Check if 6 hours have passed since last update
-        assert!(current_time - pool.last_reward_update >= REWARD_UPDATE_INTERVAL, ERewardsNotReady);
-        
-        // Update weights for all staked NFTs based on time
-        update_all_nft_weights(pool, current_time);
-        
-        pool.last_reward_update = current_time;
-        
-        event::emit(RewardsUpdated {
-            pool_id,
-            update_time: current_time,
-            total_participants: pool.participant_count,
-            total_weight: pool.total_weight,
-        });
-    }
 
     fun calculate_user_current_weight(pool: &Pool, user: address, current_time: u64): u64 {
         if (!table::contains(&pool.user_stakes, user)) {
             return 0
+        };
+
+        // Use end time if current time is greater than pool end time
+        let effective_time = if (current_time > pool.end_time) {
+            pool.end_time
+        } else {
+            current_time
         };
 
         let mut total_user_weight = 0;
@@ -531,7 +512,7 @@ module merg3::pool_rewards {
                 
                 // Check if this NFT belongs to the user
                 if (staked_nft.owner == user) {
-                    let stake_duration_ms = current_time - staked_nft.stake_time;
+                    let stake_duration_ms = effective_time - staked_nft.stake_time;
                     let stake_hours = stake_duration_ms / MS_PER_HOUR;
                     let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
                     
@@ -546,6 +527,13 @@ module merg3::pool_rewards {
     }
 
     fun calculate_total_current_weight(pool: &Pool, current_time: u64): u64 {
+        // Use end time if current time is greater than pool end time
+        let effective_time = if (current_time > pool.end_time) {
+            pool.end_time
+        } else {
+            current_time
+        };
+
         let mut total_weight = 0;
         let len = vector::length(&pool.staked_nft_ids);
         let mut i = 0;
@@ -557,7 +545,7 @@ module merg3::pool_rewards {
             if (object_table::contains(&pool.staked_nfts, nft_id)) {
                 let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
                 
-                let stake_duration_ms = current_time - staked_nft.stake_time;
+                let stake_duration_ms = effective_time - staked_nft.stake_time;
                 let stake_hours = stake_duration_ms / MS_PER_HOUR;
                 let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
                 
@@ -591,10 +579,10 @@ module merg3::pool_rewards {
             return
         };
         
-        // Check if enough time has passed since last claim based on reclaim period
+        // Check if enough time has passed since last claim based on configurable interval
         let time_since_last_claim = current_time - user_info.last_reward_claim;
-        let reclaim_period_ms = 1 * MS_PER_DAY;
-        assert!(time_since_last_claim >= reclaim_period_ms || user_info.last_reward_claim == 0, EClaimTooSoon);
+        let claim_interval = pool_system.global_config.claim_time_interval;
+        assert!(time_since_last_claim >= claim_interval || user_info.last_reward_claim == 0, EClaimTooSoon);
         
         // Calculate current weights dynamically
         let user_weight = calculate_user_current_weight(pool, owner, current_time);
@@ -709,6 +697,14 @@ module merg3::pool_rewards {
     ): vector<u64> {
         let pool = object_table::borrow(&pool_system.pools, pool_id);
         let current_time = clock::timestamp_ms(clock);
+        
+        // Use end time if current time is greater than pool end time
+        let effective_time = if (current_time > pool.end_time) {
+            pool.end_time
+        } else {
+            current_time
+        };
+        
         let mut weights = vector::empty<u64>();
         
         let len = vector::length(&pool.staked_nft_ids);
@@ -721,7 +717,7 @@ module merg3::pool_rewards {
                 let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
                 
                 if (staked_nft.owner == user) {
-                    let stake_duration_ms = current_time - staked_nft.stake_time;
+                    let stake_duration_ms = effective_time - staked_nft.stake_time;
                     let stake_hours = stake_duration_ms / MS_PER_HOUR;
                     let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
                     
@@ -900,6 +896,13 @@ module merg3::pool_rewards {
     }
     
     fun update_all_nft_weights(pool: &mut Pool, current_time: u64) {
+        // Use end time if current time is greater than pool end time
+        let effective_time = if (current_time > pool.end_time) {
+            pool.end_time
+        } else {
+            current_time
+        };
+
         // Now we can iterate through NFT IDs using our tracking vector
         let mut new_total_weight = 0;
         let len = vector::length(&pool.staked_nft_ids);
@@ -912,7 +915,7 @@ module merg3::pool_rewards {
             if (object_table::contains(&pool.staked_nfts, nft_id)) {
                 let staked_nft = object_table::borrow_mut(&mut pool.staked_nfts, nft_id);
                 
-                let stake_duration_ms = current_time - staked_nft.stake_time;
+                let stake_duration_ms = effective_time - staked_nft.stake_time;
                 let stake_hours = stake_duration_ms / MS_PER_HOUR;
                 let new_weight = if (stake_hours == 0) { 1 } else { stake_hours };
                 
@@ -973,18 +976,17 @@ module merg3::pool_rewards {
         pool_system: &PoolSystem,
         pool_id: ID,
         user: address
-    ): (u64, u64, u64, u64) {
+    ): (u64, u64, u64) {
         let pool = object_table::borrow(&pool_system.pools, pool_id);
         
         if (!table::contains(&pool.user_stakes, user)) {
-            return (0, 0, 0, 0)
+            return (0, 0, 0)
         };
         
         let user_info = table::borrow(&pool.user_stakes, user);
         (
             user_info.nft_count,
             user_info.total_weight,
-            user_info.pending_sui_rewards,
             user_info.last_reward_claim
         )
     }
@@ -1023,14 +1025,14 @@ module merg3::pool_rewards {
         pool_id: ID,
         user: address,
         clock: &Clock
-    ): (u64, u64, u64, u64, bool, u64, u64) {
+    ): (u64, u64, u64, bool, u64, u64) {
         assert!(object_table::contains(&pool_system.pools, pool_id), EPoolNotFound);
         
         let pool = object_table::borrow(&pool_system.pools, pool_id);
         let current_time = clock::timestamp_ms(clock);
         
         if (!table::contains(&pool.user_stakes, user)) {
-            return (0, 0, 0, 0, false, 0, 0)
+            return (0, 0, 0, false, 0, 0)
         };
         
         let user_info = table::borrow(&pool.user_stakes, user);
@@ -1053,12 +1055,11 @@ module merg3::pool_rewards {
         
         // Check if can claim
         let time_since_last_claim = current_time - user_info.last_reward_claim;
-        let can_claim = time_since_last_claim >= REWARD_UPDATE_INTERVAL;
+        let can_claim = time_since_last_claim >= pool_system.global_config.claim_time_interval;
         
         (
             user_info.nft_count,                    // NFTs staked
             current_weight,                         // Current weight
-            user_info.pending_sui_rewards,          // Pending rewards
             potential_rewards,                      // Potential new rewards
             can_claim,                             // Can claim now?
             stake_duration_ms,                     // Total stake time (ms)
@@ -1082,24 +1083,14 @@ module merg3::pool_rewards {
         let user_info = table::borrow(&pool.user_stakes, user);
         let time_since_last_claim = current_time - user_info.last_reward_claim;
         
-        // Can claim if it's been at least 6 hours since last reward update
-        time_since_last_claim >= REWARD_UPDATE_INTERVAL
+        // Can claim if it's been at least the configured claim interval since last claim
+        time_since_last_claim >= pool_system.global_config.claim_time_interval
     }
 
-    public fun time_until_next_reward_update(
-        pool_system: &PoolSystem,
-        pool_id: ID,
-        clock: &Clock
+    public fun get_claim_time_interval(
+        pool_system: &PoolSystem
     ): u64 {
-        let pool = object_table::borrow(&pool_system.pools, pool_id);
-        let current_time = clock::timestamp_ms(clock);
-        let time_since_update = current_time - pool.last_reward_update;
-        
-        if (time_since_update >= REWARD_UPDATE_INTERVAL) {
-            0
-        } else {
-            REWARD_UPDATE_INTERVAL - time_since_update
-        }
+        pool_system.global_config.claim_time_interval
     }
 
     public fun update_pool_image_url(

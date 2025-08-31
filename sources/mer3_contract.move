@@ -229,6 +229,21 @@ module merg3::creature_nft {
         balance::join(&mut collection.treasury, coin::into_balance(coin_balance));
     }
 
+    public fun withdraw_treasury(
+        _: &AdminCap,
+        collection: &mut Collection,
+        amount: u64,
+        recipient: address,
+        ctx: &mut TxContext
+    ) {
+        let balance_value = balance::value(&collection.treasury);
+        assert!(amount <= balance_value, 1002);
+        
+        let withdrawn_balance = balance::split(&mut collection.treasury, amount);
+        let withdrawn_coin = coin::from_balance(withdrawn_balance, ctx);
+        transfer::public_transfer(withdrawn_coin, recipient);
+    }
+
     public fun update_duplicate_recipe_fee(
         _: &AdminCap,
         collection: &mut Collection,
@@ -321,7 +336,7 @@ module merg3::creature_nft {
             
             let public_recipe = PublicRecipe {
                 recipe_hash: prompt_hash,
-                creator: tx_context::sender(ctx),
+                creator: recipient,
                 name,
                 metadata: temp_metadata,
                 creation_time: clock::timestamp_ms(clock),

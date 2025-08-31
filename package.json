@@ -1,0 +1,23 @@
+{
+  "name": "mer3-contract-cli",
+  "version": "1.0.0",
+  "description": "TypeScript CLI for Mer3 Contract Pool Management",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "create-pool": "ts-node src/poolManager.ts create-pool",
+    "add-rewards": "ts-node src/poolManager.ts add-rewards",
+    "create-pool-rewards": "ts-node src/createPoolWithRewards.ts"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.16.0",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

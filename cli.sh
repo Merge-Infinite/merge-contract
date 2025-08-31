@@ -36,6 +36,18 @@ sui client call \
     0x6 \
   --gas-budget 10000000
 
+sui client call \
+  --package 0x97e6c267e6887d5cdb11543e87b22c1ae67c81dbc8d17ab8541066d31d279bc4 \
+  --module pool_rewards \
+  --function delete_pool \
+  --args \
+    0xbbf810b65f93bac1320f3502dd22ec1fd412ec9c452000cba453f55724ce73d9 \
+   0x65f40d2a3925604ee9bf68f867e5ba58421b348f4880a6b591b4fae28193cce5 \
+    0x592594f03c6405818f27a1b1164b417cdfcfcd5d4e1d5b5baaded562e50d109e \
+    0xce1b022dd5633fae11efabc9a48c871637b66c2f3e608929cf8fd4ba7683e205 \
+  --gas-budget 10000000
+  
+
 
 sui client pay-sui \
 --input-coins 0x060b4c5d10ccc962143f56c1e353b95a99a8a346c0bfddf715e1ff48356b66d3 \
