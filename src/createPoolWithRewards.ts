@@ -49,14 +49,12 @@ async function createPoolWithRewards(config: PoolCreationConfig) {
 
     // Calculate timestamps
     const now = Date.now();
-    const endTime = now + 1 * 60 * 60 * 1000;
+    const endTime = now + 5 * 60 * 60 * 1000;
 
     console.log(`📅 Pool Timeline:`);
+    console.log(`   Start: ${new Date(now).toLocaleString()}`);
     console.log(
-      `   Start: ${new Date(now).toLocaleString()} (7 days from now)`
-    );
-    console.log(
-      `   End:   ${new Date(endTime).toLocaleString()} (37 days from now)\n`
+      `   End:   ${new Date(endTime).toLocaleString()} (1 hour from now)\n`
     );
 
     // Step 1: Create the pool
@@ -71,7 +69,7 @@ async function createPoolWithRewards(config: PoolCreationConfig) {
         createTx.object(CONTRACT_ADDRESSES.createPool.poolState),
         createTx.pure.string(config.poolName),
         createTx.pure.string(config.poolDescription),
-        createTx.pure.vector("string", []), // Empty metadata array
+        createTx.pure.vector("u64", [9]), // Empty metadata array
         createTx.pure.u64(now),
         createTx.pure.string(config.imageUrl),
         createTx.pure.u64(endTime),
@@ -92,14 +90,16 @@ async function createPoolWithRewards(config: PoolCreationConfig) {
     console.log(`   Transaction: ${createResult.digest}`);
 
     // Wait 5 seconds before next step
-    console.log("⏳ Waiting 2 seconds...");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.log("⏳ Waiting 3 seconds...");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Extract pool ID from the transaction result
     const poolObject = createResult.objectChanges?.find(
       (change) =>
         change.type === "created" && change.objectType?.includes("Pool")
     );
+
+    console.log(poolObject);
 
     if (!poolObject || !("objectId" in poolObject)) {
       throw new Error("Could not find pool ID in transaction result");
@@ -134,8 +134,8 @@ async function createPoolWithRewards(config: PoolCreationConfig) {
     console.log(`   Transaction: ${startResult.digest}\n`);
 
     // Wait 5 seconds before next step
-    console.log("⏳ Waiting 2 seconds...");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.log("⏳ Waiting 3 seconds...");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Step 3: Create coin object with reward amount
     console.log("💰 Step 3: Creating coin object for rewards...");
@@ -184,8 +184,8 @@ async function createPoolWithRewards(config: PoolCreationConfig) {
     console.log(`   Transaction: ${splitResult.digest}`);
 
     // Wait 5 seconds before next step
-    console.log("⏳ Waiting 2 seconds...");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.log("⏳ Waiting 3 seconds...");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Find the created coin object
     const coinObject = splitResult.objectChanges?.find(

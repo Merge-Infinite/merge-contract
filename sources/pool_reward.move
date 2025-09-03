@@ -499,6 +499,7 @@ module merg3::pool_rewards {
             current_time
         };
 
+        let user_info = table::borrow(&pool.user_stakes, user);
         let mut total_user_weight = 0;
         let len = vector::length(&pool.staked_nft_ids);
         let mut i = 0;
@@ -512,11 +513,23 @@ module merg3::pool_rewards {
                 
                 // Check if this NFT belongs to the user
                 if (staked_nft.owner == user) {
-                    let stake_duration_ms = effective_time - staked_nft.stake_time;
-                    let stake_hours = stake_duration_ms / MS_PER_HOUR;
-                    let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
+                    // Use the later of: stake_time or last_reward_claim
+                    // This ensures weight calculation starts from last claim if user has claimed before
+                    let weight_start_time = if (user_info.last_reward_claim > staked_nft.stake_time) {
+                        user_info.last_reward_claim
+                    } else {
+                        staked_nft.stake_time
+                    };
                     
-                    total_user_weight = total_user_weight + nft_weight;
+                    // Calculate stake duration from the effective start time
+                    let stake_duration_ms = if (effective_time > weight_start_time) {
+                        effective_time - weight_start_time
+                    } else {
+                        0
+                    };
+                    
+                    // User's weight is the sum of their NFTs' stake durations since last claim
+                    total_user_weight = total_user_weight + stake_duration_ms;
                 };
             };
             
@@ -534,28 +547,91 @@ module merg3::pool_rewards {
             current_time
         };
 
+        // Calculate the total pool duration in milliseconds
+        let pool_duration_ms = pool.end_time - pool.start_time;
+        
+        // The maximum possible weight is if all NFTs were staked for the entire pool duration
+        // We calculate the actual total weight by summing each NFT's time contribution
         let mut total_weight = 0;
         let len = vector::length(&pool.staked_nft_ids);
         let mut i = 0;
         
-        // Iterate through all staked NFTs
+        // Iterate through all staked NFTs from all users
         while (i < len) {
             let nft_id = *vector::borrow(&pool.staked_nft_ids, i);
             
             if (object_table::contains(&pool.staked_nfts, nft_id)) {
                 let staked_nft = object_table::borrow(&pool.staked_nfts, nft_id);
+                let nft_owner = staked_nft.owner;
                 
-                let stake_duration_ms = effective_time - staked_nft.stake_time;
-                let stake_hours = stake_duration_ms / MS_PER_HOUR;
-                let nft_weight = if (stake_hours == 0) { 1 } else { stake_hours };
-                
-                total_weight = total_weight + nft_weight;
+                // Get user info to check last reward claim
+                if (table::contains(&pool.user_stakes, nft_owner)) {
+                    let user_info = table::borrow(&pool.user_stakes, nft_owner);
+                    
+                    // Use the later of: stake_time or last_reward_claim
+                    let weight_start_time = if (user_info.last_reward_claim > staked_nft.stake_time) {
+                        user_info.last_reward_claim
+                    } else {
+                        staked_nft.stake_time
+                    };
+                    
+                    // Calculate stake duration from the effective start time
+                    let stake_duration_ms = if (effective_time > weight_start_time) {
+                        effective_time - weight_start_time
+                    } else {
+                        0
+                    };
+                    
+                    total_weight = total_weight + stake_duration_ms;
+                };
             };
             
             i = i + 1;
         };
         
-        total_weight
+        // Return the maximum of actual weight or minimum base to ensure proper distribution
+        if (total_weight == 0) {
+            1 // Use 1 as minimum to avoid division by zero
+        } else {
+            total_weight
+        }
+    }
+
+    fun calculate_user_reward_amount(
+        pool: &Pool,
+        user: address,
+        current_time: u64
+    ): u64 {
+        // Calculate current weights dynamically
+        let user_weight = calculate_user_current_weight(pool, user, current_time);
+        let total_weight = calculate_total_current_weight(pool, current_time);
+        
+        // Get pool duration for reward calculation
+        let pool_duration = pool.end_time - pool.start_time;
+        let elapsed_time = if (current_time > pool.end_time) {
+            pool.end_time - pool.start_time
+        } else {
+            current_time - pool.start_time
+        };
+        
+        let total_pool_balance = balance::value(&pool.sui_reward_pool);
+        
+        if (total_weight == 0 || user_weight == 0 || pool_duration == 0) {
+            0
+        } else {
+            // Calculate reward = (user_weight * elapsed_time * total_pool_balance) / (total_weight * pool_duration)
+            // This avoids precision loss from integer division
+            let numerator = (user_weight as u128) * (elapsed_time as u128) * (total_pool_balance as u128);
+            let denominator = (total_weight as u128) * (pool_duration as u128);
+            let reward = numerator / denominator;
+            
+            // Ensure the result fits in u64
+            if (reward > 0xFFFFFFFFFFFFFFFF) {
+                0xFFFFFFFFFFFFFFFF as u64
+            } else {
+                reward as u64
+            }
+        }
     }
 
     // Updated claim_rewards function using dynamic calculation
@@ -584,18 +660,8 @@ module merg3::pool_rewards {
         let claim_interval = pool_system.global_config.claim_time_interval;
         assert!(time_since_last_claim >= claim_interval || user_info.last_reward_claim == 0, EClaimTooSoon);
         
-        // Calculate current weights dynamically
-        let user_weight = calculate_user_current_weight(pool, owner, current_time);
-        let total_weight = calculate_total_current_weight(pool, current_time);
-        
-        // Calculate reward based on current weight ratio
-        // Additional check: if user_weight is 0 (no staked NFTs), return 0 reward
-        let sui_reward = if (total_weight == 0 || user_weight == 0) {
-            0
-        } else {
-            let pool_sui_balance = balance::value(&pool.sui_reward_pool);
-            (pool_sui_balance * user_weight) / total_weight
-        };
+        // Calculate rewards using shared function
+        let sui_reward = calculate_user_reward_amount(pool, owner, current_time);
         
         // Transfer rewards if available
         if (sui_reward > 0 && balance::value(&pool.sui_reward_pool) >= sui_reward) {
@@ -636,13 +702,8 @@ module merg3::pool_rewards {
         let user_weight = calculate_user_current_weight(pool, user, current_time);
         let total_pool_weight = calculate_total_current_weight(pool, current_time);
         
-        // Calculate potential rewards based on current weight
-        let potential_rewards = if (total_pool_weight > 0 && user_weight > 0) {
-            let pool_balance = balance::value(&pool.sui_reward_pool);
-            (pool_balance * user_weight) / total_pool_weight
-        } else {
-            0
-        };
+        // Calculate potential rewards using shared function
+        let potential_rewards = calculate_user_reward_amount(pool, user, current_time);
         
         // Calculate total stake time
         let stake_duration_ms = current_time - user_info.stake_start_time;
@@ -653,7 +714,7 @@ module merg3::pool_rewards {
             total_pool_weight,           // Total Pool weight
             potential_rewards,          // Current claimable rewards
             stake_duration_ms,          // Total stake time (ms)
-            current_time               // Current timestamp
+            user_info.last_reward_claim   // Last claim timestamp
         )
     }
 
@@ -839,7 +900,7 @@ module merg3::pool_rewards {
             participant_count: _,
         } = pool;
         
-        // Ensure all balances are empty before deletion
+        // Ensure all balances are empty before deletion - should be zero after withdrawal above
         balance::destroy_zero(remaining_sui_balance);
         
         // Delete the tables and object tables
